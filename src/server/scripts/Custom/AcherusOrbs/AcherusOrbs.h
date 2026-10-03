@@ -1,0 +1,380 @@
+/*
+ * This file is part of the TrinityCore Project. See AUTHORS file for Copyright information
+ *
+ * This program is free software; you can redistribute it and/or modify it
+ * under the terms of the GNU General Public License as published by the
+ * Free Software Foundation; either version 2 of the License, or (at your
+ * option) any later version.
+ *
+ * This program is distributed in the hope that it will be useful, but WITHOUT
+ * ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or
+ * FITNESS FOR A PARTICULAR PURPOSE. See the GNU General Public License for
+ * more details.
+ *
+ * You should have received a copy of the GNU General Public License along
+ * with this program. If not, see <http://www.gnu.org/licenses/>.
+ */
+
+#ifndef TRINITY_ACHERUS_ORBS_H
+#define TRINITY_ACHERUS_ORBS_H
+
+#include "Common.h"
+#include "Define.h"
+#include "GameObjectData.h"
+#include "ObjectGuid.h"
+#include "Optional.h"
+#include "Position.h"
+#include "SharedDefines.h"
+#include <array>
+#include <deque>
+#include <memory>
+#include <mutex>
+#include <string>
+#include <unordered_map>
+#include <vector>
+
+class Creature;
+class GameObject;
+class Group;
+class Map;
+class Player;
+class Unit;
+
+namespace WorldPackets::WorldState
+{
+    class InitWorldStates;
+}
+
+// Custom Temple of Kotmogu-like match played in phased copies of the Acherus: The Ebon Hold hall
+namespace AcherusOrbs
+{
+    namespace Ids
+    {
+        static constexpr uint32 MapId = 609;
+        static constexpr uint32 HallAreaId = 4342;                  // Acherus: The Ebon Hold
+        static constexpr uint32 NpcBattlemaster = 990000;
+        static constexpr uint32 NpcBeamTrigger = 23837;              // ELM General Purpose Bunny
+        static constexpr uint32 NpcSpiritGuideAlliance = 13116;      // same spirit guides as the battlegrounds
+        static constexpr uint32 NpcSpiritGuideHorde = 13117;
+        static constexpr uint32 GoFrostForge = 990001;
+        static constexpr uint32 GoBloodForge = 990002;
+        static constexpr uint32 GoUnholyForge = 990003;
+        static constexpr uint32 GoBerserkBuff = 990004;              // Berserk Buff (179905) that despawns when used
+    }
+
+    namespace Spells
+    {
+        static constexpr uint32 UndyingResolve = 51915;              // zone aura of 4298, prevents dying
+        static constexpr uint32 DominionOverAcherus = 51721;        // area aura of 4342 for death knights (quest 12657), +75% run speed
+        static constexpr uint32 SpiritHealChannel = 22011;           // spirit guide channel visual
+
+        static constexpr uint32 ForgeBeamFrost = 62893;              // Blue Skybeam
+        static constexpr uint32 ForgeBeamBlood = 62894;              // Red Skybeam
+        static constexpr uint32 ForgeBeamUnholy = 62895;             // Green Skybeam
+
+        // permanent carrier auras, all dummy (no stat effect)
+        static constexpr uint32 CarrierAuraFrost = 55840;            // Blue Wyrmrest Warden Beam (banish_chest_blue)
+        static constexpr uint32 CarrierAuraBlood = 55824;            // Red Wyrmrest Warden Beam (bloodbolt_chest)
+        static constexpr uint32 CarrierAuraUnholy = 55838;           // Green Wyrmrest Warden Beam (Banish_Chest)
+
+    }
+
+    // impact kits (SpellVisual.dbc) of the death knight presences, played once when the orb is taken (they have no state kit)
+    namespace VisualKits
+    {
+        static constexpr uint32 CarrierFrost = 10288;                // Frost Presence (48263), visual 11115
+        static constexpr uint32 CarrierBlood = 10283;                // Blood Presence (48266), visual 11114
+        static constexpr uint32 CarrierUnholy = 10297;               // Unholy Presence (48265), visual 11116
+    }
+
+    // battleground sounds of the 3.3.5 core (Battleground.h, BattlegroundWS.h)
+    namespace Sounds
+    {
+        static constexpr uint32 OrbEvent = 8174;                    // BG_WS_SOUND_ALLIANCE_FLAG_PICKED_UP: orb taken, carrier killed, orb returned
+        static constexpr uint32 AllianceWins = 8455;                // SOUND_ALLIANCE_WINS
+        static constexpr uint32 HordeWins = 8454;                   // SOUND_HORDE_WINS
+        static constexpr uint32 BattleStart = 3439;                 // SOUND_BG_START
+    }
+
+    namespace WorldStates
+    {
+        // Eye of the Storm frames, shown by claiming to be in its map/zone
+        static constexpr uint32 FakeMapId = 566;
+        static constexpr uint32 FakeZoneId = 3820;
+        static constexpr uint16 FakeBattlemasterListId = BATTLEGROUND_EY; // battlefield status, gives the score frame its timers
+
+        static constexpr uint32 AllianceScore = 2749;
+        static constexpr uint32 HordeScore = 2750;
+        static constexpr uint32 AllianceBases = 2752;               // used as "orbs held"
+        static constexpr uint32 HordeBases = 2753;
+        static constexpr uint32 AllianceTopStats = 2769;
+        static constexpr uint32 HordeTopStats = 2770;
+    }
+
+    namespace Positions
+    {
+        inline Position const Center = { 2459.4f, -5593.4f, 414.12f };
+        inline Position const Door = { 2410.68f, -5626.74f, 420.66f };
+        inline Position const BerserkBuff = { 2383.65f, -5645.20f, 420.77f };  // portal to the upper floor, on the door -> Unholy forge axis
+
+        inline std::array<Position, PVP_TEAMS_COUNT> const Spawn =
+        {{
+            { 2447.56f, -5656.40f, 420.65f, 1.294f },                // Alliance (TEAM_ALLIANCE = 0)
+            { 2397.17f, -5581.70f, 420.65f, 6.177f }                 // Horde
+        }};
+
+        inline std::array<Position, PVP_TEAMS_COUNT> const Respawn =
+        {{
+            { 2345.44f, -5696.87f, 426.03f, 0.929f },
+            { 2321.40f, -5661.22f, 426.03f, 0.258f }
+        }};
+    }
+
+    namespace Scoring
+    {
+        static constexpr uint32 MaxScore = 1600;
+        static constexpr uint32 TickInterval = 5 * IN_MILLISECONDS;
+        static constexpr uint32 PointsCenter = 6;
+        static constexpr uint32 PointsPlatform = 4;
+        static constexpr uint32 PointsOutside = 2;
+
+        static constexpr float CenterRadius = 25.0f;                // stairs at 24.0 and 25.3 yards
+        static constexpr float CenterMaxZ = 418.0f;                 // pit floor 414.1, platform 420.6
+        static constexpr float PlatformRadius = 62.0f;              // forges at ~60 yards
+        static constexpr float DoorDistance = 56.0f;                // door at 57.7 yards, measured along the door axis
+        static constexpr float FloorMinZ = 410.0f;
+        static constexpr float FloorMaxZ = 435.0f;
+    }
+
+    namespace Timers
+    {
+        static constexpr uint32 Preparation = 2 * MINUTE * IN_MILLISECONDS;
+        static constexpr uint32 MatchDuration = 25 * MINUTE * IN_MILLISECONDS;
+        static constexpr uint32 EndWait = 2 * MINUTE * IN_MILLISECONDS;
+        static constexpr uint32 ResurrectWave = 30 * IN_MILLISECONDS;
+        static constexpr uint32 OrbStack = 15 * IN_MILLISECONDS;
+        static constexpr uint32 PlayerCheck = 1 * IN_MILLISECONDS;
+        static constexpr uint32 OfflineGrace = 300 * IN_MILLISECONDS;      // MAX_OFFLINE_TIME of battlegrounds
+        static constexpr uint32 BuffRespawn = 180 * IN_MILLISECONDS;       // BUFF_RESPAWN_TIME of battlegrounds
+        static constexpr uint32 ReturnRetry = 1 * IN_MILLISECONDS;
+        static constexpr uint8 ReturnMaxAttempts = 10;
+    }
+
+    namespace OrbPower
+    {
+        // per stack, a new stack every 15 seconds (Orb of Power, spell 121164)
+        static constexpr float DamageDonePct = 10.0f;
+        static constexpr float DamageTakenPct = 30.0f;
+        static constexpr float HealingTakenPct = -5.0f;
+
+        static constexpr float ScaleBase = 0.2f;
+        static constexpr float ScalePerStack = 0.1f;
+        static constexpr float ScaleMax = 1.0f;                     // up to twice the original size
+    }
+
+    enum OrbType : uint8
+    {
+        ORB_FROST = 0,
+        ORB_BLOOD,
+        ORB_UNHOLY,
+        MAX_ORBS
+    };
+
+    struct OrbTemplate
+    {
+        char const* Name;
+        char const* Color;                                          // chat color code of the orb name
+        uint32 ForgeEntry;
+        Position ForgePosition;
+        QuaternionData ForgeRotation;
+        uint32 ForgeBeam;
+        uint32 CarrierVisualKit;
+        uint32 CarrierAura;
+    };
+
+    extern std::array<OrbTemplate, MAX_ORBS> const OrbTemplates;
+
+    struct MatchPlayer
+    {
+        ObjectGuid Guid;
+        TeamId Team = TEAM_ALLIANCE;
+        WorldLocation Return;
+        bool HandledDeath = false;
+        uint32 LastCountdown = 0;                                   // last resurrection countdown shown, in seconds
+        bool WorldStatesSent = false;
+        bool Offline = false;
+        uint32 OfflineTimer = 0;
+        Optional<uint32> StatusSlot;                                // battlefield status slot used by the final score frame
+        uint32 KillingBlows = 0;
+        uint32 HonorableKills = 0;
+        uint32 Deaths = 0;
+        uint32 DamageDone = 0;
+        uint32 HealingDone = 0;
+        uint32 Points = 0;                                          // team points scored, shown in the Flag Captures column
+    };
+
+    struct OrbState
+    {
+        ObjectGuid Forge;
+        ObjectGuid Trigger;
+        ObjectGuid Carrier;
+        uint32 Stacks = 0;
+        uint32 StackTimer = 0;
+        float CarrierOriginalScale = 1.0f;
+    };
+
+    enum class MatchStatus : uint8
+    {
+        Preparation,
+        InProgress,
+        Ended
+    };
+
+    // player sent back to the position saved when joining, after a crash or a logout that outlived the match
+    struct PendingReturn
+    {
+        WorldLocation Destination;
+        uint32 Timer = 0;
+        uint8 Attempts = 0;
+    };
+
+    enum class RemoveMode : uint8
+    {
+        TeleportOut,                                                // send back to the saved position
+        Logout,                                                     // keep the saved position, used on next login
+        Left                                                        // player left the map by himself
+    };
+
+    struct Match
+    {
+        uint32 Id = 0;
+        uint32 PhaseMask = 0;
+        MatchStatus Status = MatchStatus::Preparation;
+        uint32 StatusTimer = 0;                                     // time left in the current status
+        uint32 TickTimer = 0;
+        uint32 ResurrectTimer = 0;
+        uint32 PlayerCheckTimer = 0;
+        uint32 BattleTime = 0;                                      // time played after the preparation, set when the match ends
+        std::array<uint32, PVP_TEAMS_COUNT> Score = { };
+        Optional<TeamId> Winner;                                    // TEAM_NEUTRAL = draw
+        std::unordered_map<ObjectGuid, MatchPlayer> Players;
+        std::array<OrbState, MAX_ORBS> Orbs;
+        std::array<ObjectGuid, PVP_TEAMS_COUNT> SpiritGuides;
+        std::array<ObjectGuid, PVP_TEAMS_COUNT> PreparationSpiritGuides;
+        ObjectGuid BerserkBuff;
+        bool BerserkBuffArmed = false;                              // seen ready since it was spawned
+        uint32 BerserkBuffTimer = 0;                                // time left to respawn it
+        std::array<ObjectGuid, PVP_TEAMS_COUNT> Raids;              // battlefield raid of each team, not stored in the database
+    };
+
+    class Manager
+    {
+    public:
+        static Manager* instance();
+
+        void LoadConfig();
+        void Update(uint32 diff);
+
+        // queue
+        bool Enqueue(Player* player, std::string& error);
+        bool Dequeue(ObjectGuid guid);
+        bool IsQueued(ObjectGuid guid);
+        std::array<std::size_t, PVP_TEAMS_COUNT> GetQueueSizes();
+        void ForceStart() { _forceStart = true; }
+        void EndAll() { _endAllRequested = true; }
+        bool SkipPreparation(ObjectGuid guid);                      // like .bg start; empty guid = every match
+        std::string GetStatus() const;
+
+        // hooks
+        bool IsInMatch(ObjectGuid guid) const { return _playerMatch.contains(guid); }
+        void OnForgeUse(Player* player, GameObject* forge);
+        void OnPvPKill(Player* killer, Player* killed);
+        void OnUpdateZone(Player* player) const;
+        bool IsSanctuaryDisabled(Player const* player) const;
+        bool OnRepop(Player* player);
+        bool OnSpiritHealerQuery(Player* player, Creature* spiritHealer);
+        void OnLeaveRequest(Player* player);
+        void OnBeforeLogout(Player* player);
+        void OnLogout(Player* player);
+        void OnLogin(Player* player);
+        void FillInitWorldStates(Player* player, WorldPackets::WorldState::InitWorldStates& packet);
+        void ModifyDamage(Unit* attacker, Unit* victim, uint32& damage) const;
+        void ModifyHealing(Unit* healer, Unit* receiver, uint32& gain);
+        void TrackDamage(Unit* attacker, Unit* victim, uint32 damage);
+
+    private:
+        Manager() = default;
+
+        void ProcessRequests();
+        void ProcessPendingReturns(uint32 diff);
+        void FillOpenMatches();
+        void TryCreateMatch();
+        void StartPreparation(Match& match);
+        void StartMatch(Match& match);
+        void EndMatch(Match& match, TeamId winner);
+        void UpdateMatch(Match& match, uint32 diff);
+        void CheckPlayers(Match& match);
+
+        // raids
+        static Group* GetRaid(Match const& match, TeamId team);
+        void UpdateRaid(Match& match, MatchPlayer const& matchPlayer, Player* player);
+        void CheckRaids(Match& match);
+        void LeaveRaid(Match& match, ObjectGuid guid, TeamId team);
+        void DisbandRaids(Match& match);
+        void ResurrectDead(Match& match);
+        void ScoreTick(Match& match);
+        void UpdateCarriers(Match& match, uint32 diff);
+
+        void AddPlayer(Match& match, Player* player);
+        void RemovePlayer(Match& match, ObjectGuid guid, RemoveMode mode);
+        void ApplyMatchState(Match const& match, Player* player) const;
+        static void RestorePhase(Player* player);
+
+        void SpawnObjects(Match& match, Map* map);
+        void DespawnObjects(Match& match, Map* map);
+        static ObjectGuid SummonSpiritGuide(Match const& match, Map* map, Position const& graveyard, TeamId team);
+        static void DespawnCreature(Map* map, ObjectGuid& guid);
+        static Position const& GetGraveyard(Match const& match, TeamId team);
+        void SendResurrectCountdown(Match const& match, MatchPlayer& matchPlayer, Player* player, bool force = false) const;
+        void SpawnBerserkBuff(Match& match, Map* map);
+        void UpdateBerserkBuff(Match& match, uint32 diff);
+        void SetForgeBeam(Match& match, OrbType orb, bool on);
+        void PickUpOrb(Match& match, OrbType orb, Player* player);
+        void DropOrb(Match& match, OrbType orb, bool announce);
+        Optional<OrbType> GetCarriedOrb(Match const& match, ObjectGuid guid) const;
+        OrbState const* GetCarriedOrbState(ObjectGuid guid) const;
+
+        uint32 GetPointsForPosition(Player const* player) const;
+        uint32 GetHeldOrbCount(Match const& match, TeamId team) const;
+        void UpdateWorldStates(Match& match);
+        void SendScoreboard(Match& match, Player* target = nullptr);
+        void SendEndState(Match& match, MatchPlayer& matchPlayer, Player* player);
+        void SendBattlefieldStatus(Match const& match, MatchPlayer& matchPlayer, Player* player) const;
+        static void ClearBattlefieldStatus(MatchPlayer& matchPlayer, Player* player);
+        void Announce(Match& match, ChatMsg type, std::string const& text);
+        void PlaySound(Match& match, uint32 soundId);
+        Match* GetMatch(ObjectGuid guid) const;
+
+        std::mutex _queueLock;
+        std::array<std::deque<ObjectGuid>, PVP_TEAMS_COUNT> _queue;
+        std::vector<ObjectGuid> _pendingLeaves;                     // protected by _queueLock, handled in the world update
+        bool _endAllRequested = false;
+        std::vector<ObjectGuid> _preparationSkips;                  // protected by _queueLock, empty guid = every match
+
+        std::vector<std::unique_ptr<Match>> _matches;
+        std::unordered_map<ObjectGuid, Match*> _playerMatch;        // only changed from the world update
+        std::unordered_map<ObjectGuid, PendingReturn> _pendingReturns; // world thread only (login and world update)
+        uint32 _usedPhases = 0;
+        uint32 _nextMatchId = 1;
+        bool _forceStart = false;
+
+        // config
+        uint32 _playersPerTeam = 10;
+        uint32 _minPlayersPerTeam = 10;
+        uint32 _killBonus = 10;
+    };
+}
+
+#define sAcherusOrbs AcherusOrbs::Manager::instance()
+
+#endif // TRINITY_ACHERUS_ORBS_H
