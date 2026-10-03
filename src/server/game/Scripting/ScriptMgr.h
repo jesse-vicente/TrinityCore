@@ -74,6 +74,7 @@ struct MapEntry;
 struct Position;
 
 namespace Trinity::ChatCommands { struct ChatCommandBuilder; }
+namespace WorldPackets::WorldState { class InitWorldStates; }
 
 enum BattlegroundTypeId : uint32;
 enum ContentLevels : uint8;
@@ -721,6 +722,24 @@ class TC_GAME_API PlayerScript : public ScriptObject
         // Called when a player completes a movie
         virtual void OnMovieComplete(Player* player, uint32 movieId);
 
+        // Called before SMSG_INIT_WORLD_STATES is sent, allows changing its map/zone and world states
+        virtual void OnSendInitWorldStates(Player* player, WorldPackets::WorldState::InitWorldStates& packet);
+
+        // Called when a player requests to leave a battlefield (e.g. "Leave Battleground" button)
+        virtual void OnLeaveBattlefield(Player* player);
+
+        // Called when the sanctuary state of the player's area is checked, set isSanctuary to override it
+        virtual void OnCheckSanctuary(Player* player, bool& isSanctuary);
+
+        // Called before a player is sent to a graveyard, set handled to skip the default graveyard teleport
+        virtual void OnRepopAtGraveyard(Player* player, bool& handled);
+
+        // Called when a player interacts with or queries an area spirit healer outside of battlegrounds and battlefields
+        virtual void OnSpiritHealerQuery(Player* player, Creature* spiritHealer, bool& handled);
+
+        // Called when a player logs out, before the player is saved (OnLogout is called after the save)
+        virtual void OnBeforeLogout(Player* player);
+
 };
 
 class TC_GAME_API AccountScript : public ScriptObject
@@ -1036,6 +1055,12 @@ class TC_GAME_API ScriptMgr
         void OnQuestStatusChange(Player* player, uint32 questId);
         void OnMovieComplete(Player* player, uint32 movieId);
         void OnPlayerRepop(Player* player);
+        void OnPlayerSendInitWorldStates(Player* player, WorldPackets::WorldState::InitWorldStates& packet);
+        void OnPlayerLeaveBattlefield(Player* player);
+        bool OnPlayerCheckSanctuary(Player* player, bool isSanctuary);
+        bool OnPlayerRepopAtGraveyard(Player* player);
+        bool OnPlayerSpiritHealerQuery(Player* player, Creature* spiritHealer);
+        void OnPlayerBeforeLogout(Player* player);
 
     public: /* AccountScript */
 

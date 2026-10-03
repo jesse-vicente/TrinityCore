@@ -1976,6 +1976,41 @@ void ScriptMgr::OnPlayerRepop(Player* player)
     FOREACH_SCRIPT(PlayerScript)->OnPlayerRepop(player);
 }
 
+void ScriptMgr::OnPlayerSendInitWorldStates(Player* player, WorldPackets::WorldState::InitWorldStates& packet)
+{
+    FOREACH_SCRIPT(PlayerScript)->OnSendInitWorldStates(player, packet);
+}
+
+void ScriptMgr::OnPlayerLeaveBattlefield(Player* player)
+{
+    FOREACH_SCRIPT(PlayerScript)->OnLeaveBattlefield(player);
+}
+
+bool ScriptMgr::OnPlayerCheckSanctuary(Player* player, bool isSanctuary)
+{
+    FOREACH_SCRIPT(PlayerScript)->OnCheckSanctuary(player, isSanctuary);
+    return isSanctuary;
+}
+
+bool ScriptMgr::OnPlayerRepopAtGraveyard(Player* player)
+{
+    bool handled = false;
+    FOREACH_SCRIPT(PlayerScript)->OnRepopAtGraveyard(player, handled);
+    return handled;
+}
+
+bool ScriptMgr::OnPlayerSpiritHealerQuery(Player* player, Creature* spiritHealer)
+{
+    bool handled = false;
+    FOREACH_SCRIPT(PlayerScript)->OnSpiritHealerQuery(player, spiritHealer, handled);
+    return handled;
+}
+
+void ScriptMgr::OnPlayerBeforeLogout(Player* player)
+{
+    FOREACH_SCRIPT(PlayerScript)->OnBeforeLogout(player);
+}
+
 void ScriptMgr::OnQuestObjectiveProgress(Player* player, Quest const* quest, uint32 objectiveIndex, uint16 progress)
 {
     FOREACH_SCRIPT(PlayerScript)->OnQuestObjectiveProgress(player, quest, objectiveIndex, progress);
@@ -2703,6 +2738,30 @@ void PlayerScript::OnPlayerRepop(Player* /*player*/)
 }
 
 void PlayerScript::OnMovieComplete(Player* /*player*/, uint32 /*movieId*/)
+{
+}
+
+void PlayerScript::OnSendInitWorldStates(Player* /*player*/, WorldPackets::WorldState::InitWorldStates& /*packet*/)
+{
+}
+
+void PlayerScript::OnLeaveBattlefield(Player* /*player*/)
+{
+}
+
+void PlayerScript::OnCheckSanctuary(Player* /*player*/, bool& /*isSanctuary*/)
+{
+}
+
+void PlayerScript::OnRepopAtGraveyard(Player* /*player*/, bool& /*handled*/)
+{
+}
+
+void PlayerScript::OnSpiritHealerQuery(Player* /*player*/, Creature* /*spiritHealer*/, bool& /*handled*/)
+{
+}
+
+void PlayerScript::OnBeforeLogout(Player* /*player*/)
 {
 }
 
