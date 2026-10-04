@@ -31,6 +31,7 @@
 #include <mutex>
 #include <string>
 #include <unordered_map>
+#include <unordered_set>
 #include <vector>
 
 class Creature;
@@ -162,6 +163,7 @@ namespace AcherusOrbs
         static constexpr uint32 BuffRespawn = 180 * IN_MILLISECONDS;       // BUFF_RESPAWN_TIME of battlegrounds
         static constexpr uint32 ReturnRetry = 1 * IN_MILLISECONDS;
         static constexpr uint8 ReturnMaxAttempts = 10;
+        static constexpr uint32 ClientPing = 25 * IN_MILLISECONDS;         // client UI script safety probe interval
     }
 
     namespace OrbPower
@@ -301,9 +303,15 @@ namespace AcherusOrbs
         bool OnRepop(Player* player);
         bool OnSpiritHealerQuery(Player* player, Creature* spiritHealer);
         void OnLeaveRequest(Player* player);
+        void OnJoinRealBattlegroundQueue(Player* player);
         void OnBeforeLogout(Player* player);
         void OnLogout(Player* player);
         void OnLogin(Player* player);
+        void OnPVPLogDataRequest(Player* player);
+        void OnRequestBattlefieldStatus(Player* player);
+        void OnBattlefieldPort(Player* player, uint64 queueID, bool acceptedInvite, bool& handled);
+        void OnAddonMessage(Player* player, std::string const& msg, bool& handled);
+        void OnWardenLuaExecuted(Player* player);
         void FillInitWorldStates(Player* player, WorldPackets::WorldState::InitWorldStates& packet);
         void ModifyDamage(Unit* attacker, Unit* victim, uint32& damage) const;
         void ModifyHealing(Unit* healer, Unit* receiver, uint32& gain);
@@ -362,12 +370,32 @@ namespace AcherusOrbs
         void SendEndState(Match& match, MatchPlayer& matchPlayer, Player* player);
         void SendBattlefieldStatus(Match const& match, MatchPlayer& matchPlayer, Player* player) const;
         static void ClearBattlefieldStatus(MatchPlayer& matchPlayer, Player* player);
+        void SendQueueStatus(Player* player);
+        void ClearQueueStatus(ObjectGuid guid, Player* player);
+        static BattlegroundQueueTypeId GetFakeQueueTypeId(Player const* player);
+        void LoadClientScript();
+        void SendClientScript(Player* player);
+        void RequestClientScript(Player* player);
+        static void SendAddonMessage(Player* player, std::string const& text);
+        void SetClientRelabel(Player* player, bool active) const;
+        void PingClientScript();
+        void SendBootstrap(Player* player);
+        void ProbeClientScript(Player* player, bool assertRelabel = false);
         void Announce(Match& match, ChatMsg type, std::string const& text);
         void PlaySound(Match& match, uint32 soundId);
         Match* GetMatch(ObjectGuid guid) const;
 
         std::mutex _queueLock;
         std::array<std::deque<ObjectGuid>, PVP_TEAMS_COUNT> _queue;
+        std::unordered_map<ObjectGuid, uint32> _queueStatusSlots;   // protected by _queueLock
+        std::unordered_map<ObjectGuid, uint32> _clientScriptCooldowns; // protected by _queueLock
+        std::unordered_map<ObjectGuid, uint32> _clientBootstrapCooldowns; // protected by _queueLock
+        std::unordered_map<ObjectGuid, uint32> _clientBootstrapTimeouts; // protected by _queueLock
+        // requests dropped while the matching cooldown was active, resent as soon as it expires
+        std::unordered_set<ObjectGuid> _pendingBootstraps;          // protected by _queueLock
+        std::unordered_set<ObjectGuid> _pendingPayloads;            // protected by _queueLock
+        // players whose listener bootstrap part 1 was sent and still need part 2 (the OnEvent handler)
+        std::unordered_set<ObjectGuid> _bootstrapListenerPending;   // protected by _queueLock
         std::vector<ObjectGuid> _pendingLeaves;                     // protected by _queueLock, handled in the world update
         bool _endAllRequested = false;
         std::vector<ObjectGuid> _preparationSkips;                  // protected by _queueLock, empty guid = every match
@@ -383,6 +411,12 @@ namespace AcherusOrbs
         uint32 _playersPerTeam = 10;
         uint32 _minPlayersPerTeam = 10;
         uint32 _killBonus = 10;
+
+        // client-side UI relabel (Warden bootstrap + addon messages), see README
+        bool _clientUiEnabled = false;
+        std::string _clientLuaFile;
+        std::string _clientScript;
+        uint32 _clientPingTimer = 0;
     };
 }
 

@@ -141,6 +141,31 @@ public:
         sAcherusOrbs->OnLogin(player);
     }
 
+    void OnPVPLogDataRequest(Player* player) override
+    {
+        sAcherusOrbs->OnPVPLogDataRequest(player);
+    }
+
+    void OnRequestBattlefieldStatus(Player* player) override
+    {
+        sAcherusOrbs->OnRequestBattlefieldStatus(player);
+    }
+
+    void OnBattlefieldPort(Player* player, uint64 queueID, bool acceptedInvite, bool& handled) override
+    {
+        sAcherusOrbs->OnBattlefieldPort(player, queueID, acceptedInvite, handled);
+    }
+
+    void OnAddonMessage(Player* player, std::string const& msg, bool& handled) override
+    {
+        sAcherusOrbs->OnAddonMessage(player, msg, handled);
+    }
+
+    void OnWardenLuaExecuted(Player* player) override
+    {
+        sAcherusOrbs->OnWardenLuaExecuted(player);
+    }
+
     void OnBeforeLogout(Player* player) override
     {
         sAcherusOrbs->OnBeforeLogout(player);

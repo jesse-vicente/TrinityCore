@@ -37,10 +37,13 @@
 #include "SpellAuras.h"
 #include "StringFormat.h"
 #include "TemporarySummon.h"
+#include "Warden.h"
 #include "WorldSession.h"
 #include "WorldStatePackets.h"
 #include <algorithm>
 #include <cmath>
+#include <fstream>
+#include <sstream>
 
 namespace AcherusOrbs
 {
@@ -64,6 +67,31 @@ namespace AcherusOrbs
         constexpr float SpiritGuideOffset = 3.0f;                   // spirit guide stands in front of the respawn point
         // forges and their beams are seen from anywhere in the hall and outside it; only these objects, not the map setting
         constexpr VisibilityDistanceType ForgeVisibility = VisibilityDistanceType::Large;
+
+        // client-side UI relabel: the Warden bootstrap listener and the pushed payload share this prefix
+        constexpr char ClientScriptPrefix[] = "AcherusBG";
+        constexpr uint32 ClientScriptCooldown = 5 * IN_MILLISECONDS;
+        constexpr uint32 ClientBootstrapCooldown = 1500;           // 1.5 s
+        constexpr uint32 ClientBootstrapTimeout = 1 * IN_MILLISECONDS;
+
+        // installed through Warden::SendLua in two evals (each under the 166 char Lua limit): the frame is
+        // created and registered first, then the OnEvent handler is set. pcall swallows malformed messages.
+        constexpr char ClientBootstrap1[] = "AcherusBG_Listener=AcherusBG_Listener or CreateFrame\"Frame\"AcherusBG_Listener:RegisterEvent\"CHAT_MSG_ADDON\"";
+        constexpr char ClientBootstrap2[] = "AcherusBG_Listener:SetScript(\"OnEvent\",function(_,_,p,m,_,s)if p==\"AcherusBG\"and s==UnitName\"player\"then pcall(loadstring(m))end end)";
+
+        // the client listener only runs Lua when the sender is the player itself; the probe reports whether the
+        // script is already applied (return 2) or still needed (return 1). The reply bodies are valid Lua
+        // no-ops because the guild broadcast echoes them back to the sender.
+        std::string ClientPingBody()
+        {
+            return Trinity::StringFormat("if AcherusBG_UI then SendAddonMessage('{}','return 2','GUILD')else SendAddonMessage('{}','return 1','GUILD')end", ClientScriptPrefix, ClientScriptPrefix);
+        }
+
+        // the same probe, with the active flag refresh folded in: a periodic ping costs one message
+        std::string ClientPingAndRelabelBody()
+        {
+            return Trinity::StringFormat("if AcherusBG_UI then AcherusBG_UI.active=true AcherusBG_UI.Relabel() SendAddonMessage('{}','return 2','GUILD')else SendAddonMessage('{}','return 1','GUILD')end", ClientScriptPrefix, ClientScriptPrefix);
+        }
 
         char const* TeamName(TeamId team)
         {
@@ -128,6 +156,270 @@ namespace AcherusOrbs
         _playersPerTeam = std::max(1, sConfigMgr->GetIntDefault("AcherusOrbs.PlayersPerTeam", 10));
         _minPlayersPerTeam = std::clamp<uint32>(sConfigMgr->GetIntDefault("AcherusOrbs.MinPlayersPerTeam", 10), 1, _playersPerTeam);
         _killBonus = std::max(0, sConfigMgr->GetIntDefault("AcherusOrbs.KillBonus", 10));
+
+        _clientUiEnabled = sConfigMgr->GetBoolDefault("AcherusOrbs.ClientUi", false);
+        _clientLuaFile = sConfigMgr->GetStringDefault("AcherusOrbs.ClientLuaFile", "");
+        LoadClientScript();
+    }
+
+    // the client UI script is an ordinary .lua file read at startup and on .reload config
+    void Manager::LoadClientScript()
+    {
+        _clientScript.clear();
+
+        if (!_clientUiEnabled)
+            return;
+
+        if (_clientLuaFile.empty())
+        {
+            TC_LOG_INFO("scripts", "AcherusOrbs: AcherusOrbs.ClientUi is enabled but AcherusOrbs.ClientLuaFile is empty, client UI script disabled");
+            return;
+        }
+
+        std::ifstream file(_clientLuaFile, std::ios::binary);
+        if (!file)
+        {
+            TC_LOG_ERROR("scripts", "AcherusOrbs: cannot open client UI script '{}'", _clientLuaFile);
+            return;
+        }
+
+        std::ostringstream buffer;
+        buffer << file.rdbuf();
+        _clientScript = buffer.str();
+
+        // the client may cut chat messages at CR/LF, so the payload is sent with LF only
+        _clientScript.erase(std::remove(_clientScript.begin(), _clientScript.end(), '\r'), _clientScript.end());
+
+        TC_LOG_INFO("scripts", "AcherusOrbs: loaded client UI script ({} bytes) from '{}'", _clientScript.size(), _clientLuaFile);
+    }
+
+    void Manager::SendAddonMessage(Player* player, std::string const& text)
+    {
+        WorldPackets::Chat::Chat packet;
+        packet.Initialize(CHAT_MSG_WHISPER, LANG_ADDON, player, player, text, 0, "", LOCALE_enUS, ClientScriptPrefix);
+        player->SendDirectMessage(packet.Write());
+    }
+
+    // the client only relabels while the server says the Eye of the Storm it sees is the Acherus fake;
+    // the body is valid Lua executed by the listener, and a no-op while the payload is not applied
+    void Manager::SetClientRelabel(Player* player, bool active) const
+    {
+        if (!_clientUiEnabled || _clientScript.empty() || !player)
+            return;
+
+        SendAddonMessage(player, active ? "if AcherusBG_UI then AcherusBG_UI.active=true AcherusBG_UI.Relabel() end" : "if AcherusBG_UI then AcherusBG_UI.active=false AcherusBG_UI.Relabel() end");
+    }
+
+    // pushes the payload, or remembers the request while the send cooldown is active (retried on expiry)
+    void Manager::RequestClientScript(Player* player)
+    {
+        if (!_clientUiEnabled || _clientScript.empty())
+            return;
+
+        {
+            std::lock_guard<std::mutex> lock(_queueLock);
+            auto itr = _clientScriptCooldowns.find(player->GetGUID());
+            if (itr != _clientScriptCooldowns.end() && itr->second)
+            {
+                _pendingPayloads.insert(player->GetGUID());
+                return;
+            }
+
+            _clientScriptCooldowns[player->GetGUID()] = ClientScriptCooldown;
+            _pendingPayloads.erase(player->GetGUID());
+        }
+
+        SendClientScript(player);
+    }
+
+    // each message is valid Lua executed by the client listener: B accumulates the script, the last one runs it
+    void Manager::SendClientScript(Player* player)
+    {
+        if (_clientScript.empty())
+            return;
+
+        if (_clientScript.find("]==]") != std::string::npos)
+        {
+            TC_LOG_ERROR("scripts", "AcherusOrbs: client UI script contains ']==]' and cannot be sent");
+            return;
+        }
+
+        constexpr std::size_t ChunkSize = 190;
+
+        TC_LOG_INFO("scripts", "AcherusOrbs: sending client UI script to {} ({} bytes)", player->GetName(), _clientScript.size());
+
+        bool first = true;
+        for (std::size_t offset = 0; offset < _clientScript.size(); offset += ChunkSize)
+        {
+            // a long string ignores the newline right after the opening bracket, so a chunk that starts
+            // with one would lose it; the artificial leading newline is the one skipped, keeping the
+            // payload byte-for-byte intact no matter where the chunk boundary falls
+            std::string body = first ? "AcherusBG_Payload=[==[\n" : "AcherusBG_Payload=AcherusBG_Payload..[==[\n";
+            first = false;
+            body += _clientScript.substr(offset, ChunkSize);
+            body += "]==]";
+            SendAddonMessage(player, body);
+        }
+
+        SendAddonMessage(player, "loadstring(AcherusBG_Payload)()");
+
+        // the payload defaults to inactive, so re-assert the current state right after applying it
+        SetClientRelabel(player, GetMatch(player->GetGUID()) != nullptr || IsQueued(player->GetGUID()));
+    }
+
+    // pings the UI script to players in a match or in the queue; the body only replies while the script is not applied
+    void Manager::PingClientScript()
+    {
+        if (!_clientUiEnabled || _clientScript.empty())
+            return;
+
+        for (std::unique_ptr<Match> const& match : _matches)
+            for (auto const& [guid, matchPlayer] : match->Players)
+                if (Player* player = ObjectAccessor::FindConnectedPlayer(guid))
+                    if (player->IsInWorld())
+                        ProbeClientScript(player, true);
+
+        std::vector<ObjectGuid> queued;
+        {
+            std::lock_guard<std::mutex> lock(_queueLock);
+            for (std::deque<ObjectGuid> const& queue : _queue)
+                queued.insert(queued.end(), queue.begin(), queue.end());
+        }
+
+        for (ObjectGuid const& guid : queued)
+            if (Player* player = ObjectAccessor::FindConnectedPlayer(guid))
+                if (player->IsInWorld())
+                    ProbeClientScript(player, true);
+    }
+
+    // installs the addon message listener through the Warden module, on demand (not the check scheduler)
+    void Manager::SendBootstrap(Player* player)
+    {
+        if (!_clientUiEnabled || _clientScript.empty())
+            return;
+
+        {
+            std::lock_guard<std::mutex> lock(_queueLock);
+            _clientBootstrapTimeouts.erase(player->GetGUID());
+
+            auto itr = _clientBootstrapCooldowns.find(player->GetGUID());
+            if (itr != _clientBootstrapCooldowns.end() && itr->second)
+            {
+                // still cooling down: remember the request so the next update can retry
+                _pendingBootstraps.insert(player->GetGUID());
+                return;
+            }
+
+            _clientBootstrapCooldowns[player->GetGUID()] = ClientBootstrapCooldown;
+            _pendingBootstraps.erase(player->GetGUID());
+        }
+
+        bool sent = false;
+        if (Warden* warden = player->GetSession()->GetWarden())
+            sent = warden->SendLua(ClientBootstrap1);
+
+        {
+            std::lock_guard<std::mutex> lock(_queueLock);
+            if (sent)
+                _bootstrapListenerPending.insert(player->GetGUID());    // part 2 (OnEvent) on the next exec
+            else
+                _pendingBootstraps.insert(player->GetGUID());           // Warden busy: retry when the cooldown expires
+        }
+    }
+
+    // cheap probe: if the listener is present it answers return 1/return 2; otherwise a timeout sends the
+    // bootstrap. A probe already in flight is left alone (rate limit); assertRelabel folds the active flag
+    // refresh into the same message, so a ping costs a single addon message
+    void Manager::ProbeClientScript(Player* player, bool assertRelabel)
+    {
+        if (!_clientUiEnabled || _clientScript.empty())
+            return;
+
+        {
+            std::lock_guard<std::mutex> lock(_queueLock);
+            if (_clientBootstrapTimeouts.count(player->GetGUID()))
+                return;
+
+            _clientBootstrapTimeouts[player->GetGUID()] = ClientBootstrapTimeout;
+        }
+
+        SendAddonMessage(player, assertRelabel ? ClientPingAndRelabelBody() : ClientPingBody());
+    }
+
+    // the client processed a Warden Lua chunk: part 2 of the bootstrap, or the payload once the listener is up
+    void Manager::OnWardenLuaExecuted(Player* player)
+    {
+        if (!_clientUiEnabled || _clientScript.empty())
+            return;
+
+        bool listenerPending = false;
+        {
+            std::lock_guard<std::mutex> lock(_queueLock);
+            _clientBootstrapTimeouts.erase(player->GetGUID());
+            listenerPending = _bootstrapListenerPending.erase(player->GetGUID()) > 0;
+        }
+
+        if (listenerPending)
+        {
+            // part 1 created and registered the frame: set the OnEvent handler; the payload follows next
+            bool sent = false;
+            if (Warden* warden = player->GetSession()->GetWarden())
+                sent = warden->SendLua(ClientBootstrap2);
+
+            if (!sent)
+            {
+                std::lock_guard<std::mutex> lock(_queueLock);
+                _pendingBootstraps.insert(player->GetGUID());            // redo the bootstrap when the cooldown expires
+            }
+            return;
+        }
+
+        {
+            std::lock_guard<std::mutex> lock(_queueLock);
+            _pendingPayloads.erase(player->GetGUID());                   // the payload is being pushed now
+        }
+
+        SendClientScript(player);
+    }
+
+    // the client listener answers the probe; return 1 means the script is still needed
+    void Manager::OnAddonMessage(Player* player, std::string const& msg, bool& handled)
+    {
+        if (!_clientUiEnabled || _clientScript.empty())
+            return;
+
+        std::string::size_type const tab = msg.find('\t');
+        std::string const prefix = tab == std::string::npos ? msg : msg.substr(0, tab);
+        if (prefix != ClientScriptPrefix)
+            return;
+
+        // the message belongs to the mode, never let it reach the default addon handling
+        handled = true;
+
+        if (tab == std::string::npos)
+            return;
+
+        std::string const body = msg.substr(tab + 1);
+        if (body == "return 2")
+        {
+            {
+                std::lock_guard<std::mutex> lock(_queueLock);
+                _clientBootstrapTimeouts.erase(player->GetGUID());
+            }
+            TC_LOG_INFO("scripts", "AcherusOrbs: {} applied the client UI script", player->GetName());
+            return;
+        }
+
+        if (body != "return 1")
+            return;
+
+        {
+            std::lock_guard<std::mutex> lock(_queueLock);
+            _clientBootstrapTimeouts.erase(player->GetGUID());
+        }
+
+        TC_LOG_INFO("scripts", "AcherusOrbs: {} requested the client UI script", player->GetName());
+        RequestClientScript(player);
     }
 
     // ----------------------------------------------------------------- queue
@@ -146,6 +438,14 @@ namespace AcherusOrbs
             return false;
         }
 
+        // a real battleground or arena queue also owns one of the two queue slots, and a player in one
+        // cannot join the Acherus queue (the custom mode shares the client with the native pool)
+        if (player->InBattlegroundQueue())
+        {
+            error = "You cannot queue while in a battleground or arena queue.";
+            return false;
+        }
+
         if (player->GetLevel() < RequiredLevel)
         {
             error = Trinity::StringFormat("You must be level {} to join the battle for Acherus.", RequiredLevel);
@@ -156,33 +456,46 @@ namespace AcherusOrbs
         if (team != TEAM_ALLIANCE && team != TEAM_HORDE)
             return false;
 
-        std::lock_guard<std::mutex> lock(_queueLock);
-        for (std::deque<ObjectGuid> const& queue : _queue)
         {
-            if (std::find(queue.begin(), queue.end(), player->GetGUID()) != queue.end())
+            std::lock_guard<std::mutex> lock(_queueLock);
+            for (std::deque<ObjectGuid> const& queue : _queue)
             {
-                error = "You are already queued for the battle for Acherus.";
-                return false;
+                if (std::find(queue.begin(), queue.end(), player->GetGUID()) != queue.end())
+                {
+                    error = "You are already queued for the battle for Acherus.";
+                    return false;
+                }
             }
+
+            _queue[team].push_back(player->GetGUID());
         }
 
-        _queue[team].push_back(player->GetGUID());
+        SendQueueStatus(player);
+        ProbeClientScript(player);
         return true;
     }
 
     bool Manager::Dequeue(ObjectGuid guid)
     {
-        std::lock_guard<std::mutex> lock(_queueLock);
-        for (std::deque<ObjectGuid>& queue : _queue)
+        bool found = false;
         {
-            auto itr = std::find(queue.begin(), queue.end(), guid);
-            if (itr != queue.end())
+            std::lock_guard<std::mutex> lock(_queueLock);
+            for (std::deque<ObjectGuid>& queue : _queue)
             {
-                queue.erase(itr);
-                return true;
+                auto itr = std::find(queue.begin(), queue.end(), guid);
+                if (itr != queue.end())
+                {
+                    queue.erase(itr);
+                    found = true;
+                    break;
+                }
             }
         }
-        return false;
+
+        if (found)
+            ClearQueueStatus(guid, ObjectAccessor::FindConnectedPlayer(guid));
+
+        return found;
     }
 
     bool Manager::IsQueued(ObjectGuid guid)
@@ -221,8 +534,97 @@ namespace AcherusOrbs
     {
         ProcessRequests();
         ProcessPendingReturns(diff);
+
+        std::vector<ObjectGuid> expiredBootstrap;
+        {
+            std::lock_guard<std::mutex> lock(_queueLock);
+            for (auto itr = _clientScriptCooldowns.begin(); itr != _clientScriptCooldowns.end();)
+            {
+                if (itr->second <= diff)
+                    itr = _clientScriptCooldowns.erase(itr);
+                else
+                {
+                    itr->second -= diff;
+                    ++itr;
+                }
+            }
+
+            for (auto itr = _clientBootstrapCooldowns.begin(); itr != _clientBootstrapCooldowns.end();)
+            {
+                if (itr->second <= diff)
+                    itr = _clientBootstrapCooldowns.erase(itr);
+                else
+                {
+                    itr->second -= diff;
+                    ++itr;
+                }
+            }
+
+            for (auto itr = _clientBootstrapTimeouts.begin(); itr != _clientBootstrapTimeouts.end();)
+            {
+                if (itr->second <= diff)
+                {
+                    expiredBootstrap.push_back(itr->first);
+                    itr = _clientBootstrapTimeouts.erase(itr);
+                }
+                else
+                {
+                    itr->second -= diff;
+                    ++itr;
+                }
+            }
+        }
+
+        // a probe got no answer: the listener is missing, install it through Warden
+        for (ObjectGuid const& guid : expiredBootstrap)
+            if (Player* player = ObjectAccessor::FindConnectedPlayer(guid))
+                SendBootstrap(player);
+
+        // requests dropped while a cooldown was active: send them as soon as it expires
+        std::vector<ObjectGuid> retryBootstrap;
+        std::vector<ObjectGuid> retryPayload;
+        {
+            std::lock_guard<std::mutex> lock(_queueLock);
+            for (ObjectGuid const& guid : _pendingBootstraps)
+                if (_clientBootstrapCooldowns.count(guid) == 0)
+                    retryBootstrap.push_back(guid);
+
+            for (ObjectGuid const& guid : _pendingPayloads)
+                if (_clientScriptCooldowns.count(guid) == 0)
+                    retryPayload.push_back(guid);
+        }
+
+        for (ObjectGuid const& guid : retryBootstrap)
+        {
+            if (Player* player = ObjectAccessor::FindConnectedPlayer(guid))
+                SendBootstrap(player);
+            else
+            {
+                std::lock_guard<std::mutex> lock(_queueLock);
+                _pendingBootstraps.erase(guid);
+            }
+        }
+
+        for (ObjectGuid const& guid : retryPayload)
+        {
+            if (Player* player = ObjectAccessor::FindConnectedPlayer(guid))
+                RequestClientScript(player);
+            else
+            {
+                std::lock_guard<std::mutex> lock(_queueLock);
+                _pendingPayloads.erase(guid);
+            }
+        }
+
         FillOpenMatches();
         TryCreateMatch();
+
+        _clientPingTimer += diff;
+        if (_clientPingTimer >= Timers::ClientPing)
+        {
+            _clientPingTimer = 0;
+            PingClientScript();
+        }
 
         for (std::unique_ptr<Match>& match : _matches)
             UpdateMatch(*match, diff);
@@ -496,6 +898,10 @@ namespace AcherusOrbs
             {
                 matchPlayer.WorldStatesSent = true;
                 player->SendInitWorldStates(player->GetZoneId(), player->GetAreaId());
+
+                // the client shows the battleground button and asks for the scoreboard while an active
+                // battlefield status is present, so it is (re)sent once the player finished entering the world
+                SendBattlefieldStatus(match, matchPlayer, player);
             }
 
             if (!player->IsAlive())
@@ -764,6 +1170,12 @@ namespace AcherusOrbs
             SpawnBerserkBuff(match, map);
 
         UpdateWorldStates(match);
+
+        // refresh the battlefield status so the score frame timers switch from the preparation to the match
+        for (auto& [guid, matchPlayer] : match.Players)
+            if (Player* player = ObjectAccessor::FindConnectedPlayer(guid))
+                SendBattlefieldStatus(match, matchPlayer, player);
+
         Announce(match, CHAT_MSG_BG_SYSTEM_NEUTRAL, "The battle for Acherus has begun! Claim the orbs at the runeforges!");
         PlaySound(match, Sounds::BattleStart);
     }
@@ -836,6 +1248,8 @@ namespace AcherusOrbs
             ? "You are joining a battle for Acherus in progress." : "Your battle for Acherus is starting.");
         if (player->IsGameMaster())
             ChatHandler(player->GetSession()).SendSysMessage("You are in GM mode and see every phase. Use .gm off to play the match.");
+
+        ProbeClientScript(player);
     }
 
     void Manager::RemovePlayer(Match& match, ObjectGuid guid, RemoveMode mode)
@@ -1467,10 +1881,25 @@ namespace AcherusOrbs
     void Manager::OnLogout(Player* player)
     {
         Dequeue(player->GetGUID());
+
+        {
+            std::lock_guard<std::mutex> lock(_queueLock);
+            _clientBootstrapTimeouts.erase(player->GetGUID());
+            _pendingBootstraps.erase(player->GetGUID());
+            _pendingPayloads.erase(player->GetGUID());
+            _bootstrapListenerPending.erase(player->GetGUID());
+        }
     }
 
     void Manager::OnLogin(Player* player)
     {
+        // fresh session: install the listener through Warden; its response pushes the payload
+        {
+            std::lock_guard<std::mutex> lock(_queueLock);
+            _clientBootstrapCooldowns.erase(player->GetGUID());
+        }
+        SendBootstrap(player);
+
         // the orb is never kept across a login, its aura may still have been saved by a crash
         for (OrbTemplate const& orbTemplate : OrbTemplates)
         {
@@ -1586,6 +2015,67 @@ namespace AcherusOrbs
         packet.Worldstates.emplace_back(3085, 379);
 
         match->Players[player->GetGUID()].WorldStatesSent = true;
+    }
+
+    // the client asks for the scoreboard with MSG_PVP_LOG_DATA; outside of a real battleground nothing answers it
+    void Manager::OnPVPLogDataRequest(Player* player)
+    {
+        Match* match = GetMatch(player->GetGUID());
+        if (!match || player->GetMapId() != Ids::MapId)
+            return;
+
+        if (!match->Players.contains(player->GetGUID()))
+            return;
+
+        SendScoreboard(*match, player);
+    }
+
+    // the client asks for the state of its battleground queues (CMSG_BATTLEFIELD_STATUS); outside of a real
+    // battleground nothing answers it, so the minimap button of the mode is maintained here
+    void Manager::OnRequestBattlefieldStatus(Player* player)
+    {
+        // the client asks for the status when the UI loads or reloads, so probe the listener there too
+        ProbeClientScript(player);
+
+        if (Match* match = GetMatch(player->GetGUID()))
+        {
+            if (player->GetMapId() != Ids::MapId)
+                return;
+
+            auto itr = match->Players.find(player->GetGUID());
+            if (itr == match->Players.end())
+                return;
+
+            SendBattlefieldStatus(*match, itr->second, player);
+            return;
+        }
+
+        if (IsQueued(player->GetGUID()))
+            SendQueueStatus(player);
+    }
+
+    // CMSG_BATTLEFIELD_PORT, the "Leave Queue" button of the PvP frame
+    void Manager::OnBattlefieldPort(Player* player, uint64 queueID, bool acceptedInvite, bool& handled)
+    {
+        // entering a match is done by the module itself, there is never an invitation to accept
+        if (acceptedInvite)
+            return;
+
+        if (!IsQueued(player->GetGUID()))
+            return;
+
+        BattlegroundQueueTypeId const queueTypeId = BattlegroundQueueTypeId::FromPacked(queueID);
+        if (queueTypeId.BattlemasterListId != WorldStates::FakeBattlemasterListId)
+            return;
+
+        // a real queue with the same id owns the slot, let the core handle the leave
+        if (player->GetBattlegroundQueueIndex(queueTypeId) < PLAYER_MAX_BATTLEGROUND_QUEUES)
+            return;
+
+        if (Dequeue(player->GetGUID()))
+            ChatHandler(player->GetSession()).SendSysMessage("You left the queue for the battle for Acherus.");
+
+        handled = true;
     }
 
     void Manager::ModifyDamage(Unit* attacker, Unit* victim, uint32& damage) const
@@ -1724,19 +2214,16 @@ namespace AcherusOrbs
 
         WorldPackets::Battleground::BattlefieldStatusActive status;
         status.Hdr.QueueSlot = *matchPlayer.StatusSlot;
-        status.Hdr.QueueID = BattlegroundQueueTypeId{
-            .BattlemasterListId = WorldStates::FakeBattlemasterListId,
-            .BracketId = uint8(bracket ? bracket->GetBracketId() : 0),
-            .TeamSize = 0
-        }.GetPacked();
+        status.Hdr.QueueID = GetFakeQueueTypeId(player).GetPacked();
         status.Hdr.RangeMin = uint8(bracket ? bracket->MinLevel : player->GetLevel());
         status.Hdr.RangeMax = uint8(bracket ? bracket->MaxLevel : player->GetLevel());
         status.Hdr.InstanceID = match.Id;
         status.Mapid = WorldStates::FakeMapId;
         status.ShutdownTimer = match.StatusTimer;
-        status.StartTimer = match.BattleTime;
+        status.StartTimer = match.Status == MatchStatus::InProgress ? Timers::MatchDuration - match.StatusTimer : match.BattleTime;
         status.ArenaFaction = matchPlayer.Team == TEAM_HORDE ? PVP_TEAM_HORDE : PVP_TEAM_ALLIANCE;
         player->SendDirectMessage(status.Write());
+        SetClientRelabel(player, true);
     }
 
     void Manager::ClearBattlefieldStatus(MatchPlayer& matchPlayer, Player* player)
@@ -1748,6 +2235,75 @@ namespace AcherusOrbs
         status.QueueSlot = *matchPlayer.StatusSlot;
         player->SendDirectMessage(status.Write());
         matchPlayer.StatusSlot.reset();
+        sAcherusOrbs->SetClientRelabel(player, false);
+    }
+
+    // fake queue id of the mode: Eye of the Storm's battleground list id, so the client shows its frames
+    BattlegroundQueueTypeId Manager::GetFakeQueueTypeId(Player const* player)
+    {
+        PvPDifficultyEntry const* bracket = GetBattlegroundBracketByLevel(WorldStates::FakeMapId, player->GetLevel());
+        return BattlegroundQueueTypeId{
+            .BattlemasterListId = WorldStates::FakeBattlemasterListId,
+            .BracketId = uint8(bracket ? bracket->GetBracketId() : 0),
+            .TeamSize = 0
+        };
+    }
+
+    // queued players get a battlefield status too, so the minimap button appears while waiting in the queue
+    void Manager::SendQueueStatus(Player* player)
+    {
+        uint32 slot = 0;
+        {
+            std::lock_guard<std::mutex> lock(_queueLock);
+            auto itr = _queueStatusSlots.find(player->GetGUID());
+            if (itr != _queueStatusSlots.end())
+                slot = itr->second;
+            else
+            {
+                for (; slot < PLAYER_MAX_BATTLEGROUND_QUEUES; ++slot)
+                    if (player->GetBattlegroundQueueTypeId(slot) == BATTLEGROUND_QUEUE_NONE)
+                        break;
+
+                if (slot >= PLAYER_MAX_BATTLEGROUND_QUEUES)
+                    return;
+
+                _queueStatusSlots[player->GetGUID()] = slot;
+            }
+        }
+
+        PvPDifficultyEntry const* bracket = GetBattlegroundBracketByLevel(WorldStates::FakeMapId, player->GetLevel());
+
+        WorldPackets::Battleground::BattlefieldStatusQueued status;
+        status.Hdr.QueueSlot = slot;
+        status.Hdr.QueueID = GetFakeQueueTypeId(player).GetPacked();
+        status.Hdr.RangeMin = uint8(bracket ? bracket->MinLevel : player->GetLevel());
+        status.Hdr.RangeMax = uint8(bracket ? bracket->MaxLevel : player->GetLevel());
+        status.AverageWaitTime = 0;
+        status.WaitTime = 0;
+        player->SendDirectMessage(status.Write());
+        SetClientRelabel(player, true);
+    }
+
+    void Manager::ClearQueueStatus(ObjectGuid guid, Player* player)
+    {
+        uint32 slot = 0;
+        {
+            std::lock_guard<std::mutex> lock(_queueLock);
+            auto itr = _queueStatusSlots.find(guid);
+            if (itr == _queueStatusSlots.end())
+                return;
+
+            slot = itr->second;
+            _queueStatusSlots.erase(itr);
+        }
+
+        if (!player)
+            return;
+
+        WorldPackets::Battleground::BattlefieldStatusNone status;
+        status.QueueSlot = slot;
+        player->SendDirectMessage(status.Write());
+        SetClientRelabel(player, false);
     }
 
     void Manager::Announce(Match& match, ChatMsg type, std::string const& text)
