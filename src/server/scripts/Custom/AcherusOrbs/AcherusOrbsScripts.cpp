@@ -186,6 +186,11 @@ public:
         sAcherusOrbs->OnLeaveRequest(player);
     }
 
+    void OnJoinBattlegroundQueue(Player* player) override
+    {
+        sAcherusOrbs->OnJoinRealBattlegroundQueue(player);
+    }
+
     void OnCheckSanctuary(Player* player, bool& isSanctuary) override
     {
         if (isSanctuary && sAcherusOrbs->IsSanctuaryDisabled(player))

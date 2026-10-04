@@ -125,7 +125,7 @@ namespace AcherusOrbs
         {
             return player->IsInWorld() && player->IsAlive() && !player->IsInCombat() && !player->IsInFlight()
                 && !player->IsBeingTeleported() && !player->InBattleground() && !player->InArena()
-                && !player->GetMap()->Instanceable();
+                && !player->InBattlegroundQueue() && !player->GetMap()->Instanceable();
         }
 
         // Group only checks its battlefield pointer for null, never uses it. A battlefield raid is not stored in the
@@ -1855,6 +1855,14 @@ namespace AcherusOrbs
 
         std::lock_guard<std::mutex> lock(_queueLock);
         _pendingLeaves.push_back(player->GetGUID());
+    }
+
+    // the player joined a real battleground or arena queue: the two queues are mutually exclusive, so the
+    // Acherus queue is dropped (Dequeue also clears the fake status/slot and turns the relabel off)
+    void Manager::OnJoinRealBattlegroundQueue(Player* player)
+    {
+        if (Dequeue(player->GetGUID()))
+            ChatHandler(player->GetSession()).SendSysMessage("You left the queue for the battle for Acherus to join a battleground.");
     }
 
     // called before the player is saved, so the orb auras are never stored
