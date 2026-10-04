@@ -95,6 +95,9 @@ class TC_GAME_API Warden
 
         virtual size_t DEBUG_ForceSpecificChecks(std::vector<uint16> const& checks) = 0;
 
+        // Sends a single Lua chunk to the client through the Warden module (Windows only); returns false when not possible
+        virtual bool SendLua(std::string const& code);
+
     protected:
         void DecryptData(uint8* buffer, uint32 length);
         void EncryptData(uint8* buffer, uint32 length);
