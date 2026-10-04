@@ -130,8 +130,8 @@ namespace AcherusOrbs
 
         inline std::array<Position, PVP_TEAMS_COUNT> const Respawn =
         {{
-            { 2345.44f, -5696.87f, 426.03f, 0.929f },
-            { 2321.40f, -5661.22f, 426.03f, 0.258f }
+            { 2438.10f, -5707.64f, 444.61f, 1.347f },
+            { 2345.79f, -5571.24f, 444.62f, 6.068f }
         }};
     }
 
