@@ -178,6 +178,8 @@ void WorldSession::HandleBattlemasterJoinOpcode(WorldPackets::Battleground::Batt
         if (_player->HasAura(9454))
             return;
 
+        sScriptMgr->OnPlayerJoinBattlegroundQueue(_player);
+
         BattlegroundQueue& bgQueue = sBattlegroundMgr->GetBattlegroundQueue(bgQueueTypeId);
         GroupQueueInfo* ginfo = bgQueue.AddGroup(_player, nullptr, bracketEntry, false, isPremade, 0, 0);
         uint32 avgTime = bgQueue.GetAverageQueueWaitTime(ginfo);
@@ -228,6 +230,7 @@ void WorldSession::HandleBattlemasterJoinOpcode(WorldPackets::Battleground::Batt
             }
 
             // add to queue
+            sScriptMgr->OnPlayerJoinBattlegroundQueue(member);
             uint32 queueSlot = member->AddBattlegroundQueueId(bgQueueTypeId);
 
             WorldPackets::Battleground::BattlefieldStatusQueued battlefieldStatus;
@@ -270,7 +273,10 @@ void WorldSession::HandlePVPLogDataOpcode(WorldPackets::Battleground::PVPLogData
 {
     Battleground* bg = _player->GetBattleground();
     if (!bg)
+    {
+        sScriptMgr->OnPlayerPVPLogDataRequest(_player);
         return;
+    }
 
     // Prevent players from sending BuildPvpLogDataPacket in an arena except for when sent in BattleGround::EndBattleGround.
     if (bg->isArena())
@@ -295,6 +301,10 @@ void WorldSession::HandleBattlefieldListOpcode(WorldPackets::Battleground::Battl
 
 void WorldSession::HandleBattleFieldPortOpcode(WorldPackets::Battleground::BattlefieldPort& battlefieldPort)
 {
+    // the port may belong to a custom battlefield the core does not own
+    if (sScriptMgr->OnPlayerBattlefieldPort(_player, battlefieldPort.QueueID, battlefieldPort.AcceptedInvite))
+        return;
+
     BattlegroundQueueTypeId bgQueueTypeId = BattlegroundQueueTypeId::FromPacked(battlefieldPort.QueueID);
     uint32 queueSlot = _player->GetBattlegroundQueueIndex(bgQueueTypeId);
     if (queueSlot >= PLAYER_MAX_BATTLEGROUND_QUEUES)
@@ -519,6 +529,8 @@ void WorldSession::HandleRequestBattlefieldStatusOpcode(WorldPackets::Battlegrou
             SendPacket(battlefieldStatus.Write());
         }
     }
+
+    sScriptMgr->OnPlayerRequestBattlefieldStatus(_player);
 }
 
 void WorldSession::HandleBattlemasterJoinArena(WorldPackets::Battleground::BattlemasterJoinArena& packet)
@@ -666,6 +678,7 @@ void WorldSession::HandleBattlemasterJoinArena(WorldPackets::Battleground::Battl
             }
 
             // add to queue
+            sScriptMgr->OnPlayerJoinBattlegroundQueue(member);
             uint32 queueSlot = member->AddBattlegroundQueueId(bgQueueTypeId);
 
             WorldPackets::Battleground::BattlefieldStatusQueued battlefieldStatus;
@@ -682,6 +695,8 @@ void WorldSession::HandleBattlemasterJoinArena(WorldPackets::Battleground::Battl
     }
     else
     {
+        sScriptMgr->OnPlayerJoinBattlegroundQueue(_player);
+
         GroupQueueInfo* ginfo = bgQueue.AddGroup(_player, nullptr, bracketEntry, packet.IsRated, false, arenaRating, matchmakerRating, ateamId, previousOpponents);
         uint32 avgTime = bgQueue.GetAverageQueueWaitTime(ginfo);
         uint32 queueSlot = _player->AddBattlegroundQueueId(bgQueueTypeId);

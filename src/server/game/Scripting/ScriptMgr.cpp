@@ -1986,6 +1986,11 @@ void ScriptMgr::OnPlayerLeaveBattlefield(Player* player)
     FOREACH_SCRIPT(PlayerScript)->OnLeaveBattlefield(player);
 }
 
+void ScriptMgr::OnPlayerJoinBattlegroundQueue(Player* player)
+{
+    FOREACH_SCRIPT(PlayerScript)->OnJoinBattlegroundQueue(player);
+}
+
 bool ScriptMgr::OnPlayerCheckSanctuary(Player* player, bool isSanctuary)
 {
     FOREACH_SCRIPT(PlayerScript)->OnCheckSanctuary(player, isSanctuary);
@@ -2009,6 +2014,35 @@ bool ScriptMgr::OnPlayerSpiritHealerQuery(Player* player, Creature* spiritHealer
 void ScriptMgr::OnPlayerBeforeLogout(Player* player)
 {
     FOREACH_SCRIPT(PlayerScript)->OnBeforeLogout(player);
+}
+
+void ScriptMgr::OnPlayerPVPLogDataRequest(Player* player)
+{
+    FOREACH_SCRIPT(PlayerScript)->OnPVPLogDataRequest(player);
+}
+
+void ScriptMgr::OnPlayerRequestBattlefieldStatus(Player* player)
+{
+    FOREACH_SCRIPT(PlayerScript)->OnRequestBattlefieldStatus(player);
+}
+
+bool ScriptMgr::OnPlayerBattlefieldPort(Player* player, uint64 queueID, bool acceptedInvite)
+{
+    bool handled = false;
+    FOREACH_SCRIPT(PlayerScript)->OnBattlefieldPort(player, queueID, acceptedInvite, handled);
+    return handled;
+}
+
+bool ScriptMgr::OnPlayerAddonMessage(Player* player, std::string const& msg)
+{
+    bool handled = false;
+    FOREACH_SCRIPT(PlayerScript)->OnAddonMessage(player, msg, handled);
+    return handled;
+}
+
+void ScriptMgr::OnPlayerWardenLuaExecuted(Player* player)
+{
+    FOREACH_SCRIPT(PlayerScript)->OnWardenLuaExecuted(player);
 }
 
 void ScriptMgr::OnQuestObjectiveProgress(Player* player, Quest const* quest, uint32 objectiveIndex, uint16 progress)
@@ -2762,6 +2796,30 @@ void PlayerScript::OnSpiritHealerQuery(Player* /*player*/, Creature* /*spiritHea
 }
 
 void PlayerScript::OnBeforeLogout(Player* /*player*/)
+{
+}
+
+void PlayerScript::OnPVPLogDataRequest(Player* /*player*/)
+{
+}
+
+void PlayerScript::OnRequestBattlefieldStatus(Player* /*player*/)
+{
+}
+
+void PlayerScript::OnBattlefieldPort(Player* /*player*/, uint64 /*queueID*/, bool /*acceptedInvite*/, bool& /*handled*/)
+{
+}
+
+void PlayerScript::OnAddonMessage(Player* /*player*/, std::string const& /*msg*/, bool& /*handled*/)
+{
+}
+
+void PlayerScript::OnWardenLuaExecuted(Player* /*player*/)
+{
+}
+
+void PlayerScript::OnJoinBattlegroundQueue(Player* /*player*/)
 {
 }
 

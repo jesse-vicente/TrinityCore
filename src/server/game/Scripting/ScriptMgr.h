@@ -728,6 +728,9 @@ class TC_GAME_API PlayerScript : public ScriptObject
         // Called when a player requests to leave a battlefield (e.g. "Leave Battleground" button)
         virtual void OnLeaveBattlefield(Player* player);
 
+        // Called right before a player is added to a battleground or arena queue
+        virtual void OnJoinBattlegroundQueue(Player* player);
+
         // Called when the sanctuary state of the player's area is checked, set isSanctuary to override it
         virtual void OnCheckSanctuary(Player* player, bool& isSanctuary);
 
@@ -739,6 +742,21 @@ class TC_GAME_API PlayerScript : public ScriptObject
 
         // Called when a player logs out, before the player is saved (OnLogout is called after the save)
         virtual void OnBeforeLogout(Player* player);
+
+        // Called when a player requests the PvP scoreboard (MSG_PVP_LOG_DATA) outside of battlegrounds and battlefields
+        virtual void OnPVPLogDataRequest(Player* player);
+
+        // Called when a player requests the state of their battleground queues (CMSG_BATTLEFIELD_STATUS)
+        virtual void OnRequestBattlefieldStatus(Player* player);
+
+        // Called when a player ports into or out of a battlefield queue (CMSG_BATTLEFIELD_PORT), set handled to skip the default handling
+        virtual void OnBattlefieldPort(Player* player, uint64 queueID, bool acceptedInvite, bool& handled);
+
+        // Called when a client sends an addon message (LANG_ADDON), set handled to skip the default handling
+        virtual void OnAddonMessage(Player* player, std::string const& msg, bool& handled);
+
+        // Called when the client responds to a Lua chunk sent through Warden::SendLua
+        virtual void OnWardenLuaExecuted(Player* player);
 
 };
 
@@ -1057,10 +1075,16 @@ class TC_GAME_API ScriptMgr
         void OnPlayerRepop(Player* player);
         void OnPlayerSendInitWorldStates(Player* player, WorldPackets::WorldState::InitWorldStates& packet);
         void OnPlayerLeaveBattlefield(Player* player);
+        void OnPlayerJoinBattlegroundQueue(Player* player);
         bool OnPlayerCheckSanctuary(Player* player, bool isSanctuary);
         bool OnPlayerRepopAtGraveyard(Player* player);
         bool OnPlayerSpiritHealerQuery(Player* player, Creature* spiritHealer);
         void OnPlayerBeforeLogout(Player* player);
+        void OnPlayerPVPLogDataRequest(Player* player);
+        void OnPlayerRequestBattlefieldStatus(Player* player);
+        bool OnPlayerBattlefieldPort(Player* player, uint64 queueID, bool acceptedInvite);
+        bool OnPlayerAddonMessage(Player* player, std::string const& msg);
+        void OnPlayerWardenLuaExecuted(Player* player);
 
     public: /* AccountScript */
 
