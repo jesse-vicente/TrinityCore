@@ -21,7 +21,7 @@ todo o comportamento é server-side e reaproveita só dados que o cliente já co
 | Escala do portador | +20% ao pegar, +10% por acúmulo, até 2x | decisão do projeto (sem fonte) |
 | Orbes | 1 por jogador, sem montaria; morte do portador devolve o orbe à forja | warcraft.wiki.gg |
 | Kill | +10 pontos para o time a cada kill de jogador inimigo, portador ou não (sem bônus extra por portador; a spell 112910 não existe no 3.3.5) | decisão do projeto |
-| Preparação | 2 min, cada time preso ao seu spawn | padrão de BG do core |
+| Preparação | 2 min, cada time preso ao seu spawn, dentro de um domo com paredes invisíveis | duração: padrão de BG do core; domo: decisão do projeto, inspirado nas barreiras do Eye of the Storm |
 | Ressurreição | ondas de 30 s, só para quem deu "Release Spirit" | padrão de BG do core |
 | Desconexão | lugar mantido por 300 s | `MAX_OFFLINE_TIME` das BGs |
 | Nível | apenas 80 | decisão do projeto |
@@ -58,7 +58,7 @@ da porta; o resto (corredor, área externa, outros andares) = fora.
 | `AcherusOrbs.h` | constantes (IDs, posições, timers, pontuação) e as classes `Manager`, `Match`, `MatchPlayer`, `OrbState` |
 | `AcherusOrbs.cpp` | toda a lógica: fila, partidas, phases, orbes, mortes, placar, logout/login |
 | `AcherusOrbsScripts.cpp` | NPC da fila, forja clicável, `PlayerScript`, `UnitScript`, `WorldScript`, comandos `.acherus` |
-| `sql/custom/world/2026_10_01_00_world_acherus_orbs.sql` | NPC 990000, textos de gossip 990000/990001, forjas 990001–990003, buff Berserk 990004 |
+| `sql/custom/world/2026_10_01_00_world_acherus_orbs.sql` | NPC 990000, textos de gossip 990000/990001, forjas 990001–990003, buff Berserk 990004, parede invisível da preparação 990005 |
 | `sql/custom/characters/2026_10_01_00_characters_acherus_orbs.sql` | tabela `custom_acherus_orbs_return` |
 
 Os SQLs são aplicados automaticamente pelo updater do worldserver (`updates_include` já aponta para `sql/custom`).
@@ -115,10 +115,14 @@ convidado pelo líder). O módulo guarda só o GUID do grupo, porque o `Group` p
   DK, então há **até 23 partidas simultâneas**.
 - Na phase da partida, os NPCs e GOs originais de Acherus somem, inclusive as forjas. Por isso cada partida spawna os
   seus próprios objetos: clones clicáveis das forjas (type 10, display 8175, size 2.03), bunnies invisíveis
-  (`23837`) com o feixe de cada forja e Spirit Guides (`13116`/`13117`).
+  (`23837`) com o feixe de cada forja, Spirit Guides (`13116`/`13117`), o buff Berserk (990004) e, na preparação, o
+  domo (NPC `28306`) e as paredes invisíveis (990005) de cada spawn.
 - A phase de cada participante é reaplicada a cada segundo. Isso cobre auras de phase de quest, que podem ser
   reaplicadas por troca de área.
 - Ao sair, a phase é recalculada como em `AuraEffect::HandlePhase`.
+- As forjas, os bunnies dos feixes e os domos da preparação são vistos de longe: cada um recebe
+  `SetVisibilityDistanceOverride(VisibilityDistanceType::Large)` (200 jardas; o mapa usa 100). O ajuste vale só para
+  esses objetos e não mexe em `Visibility.Distance.*` nem em nada fora da partida.
 
 ### Interface sem patch de cliente
 
@@ -167,10 +171,11 @@ Testado em jogo com os comandos `.debug bgui`, que eram um patch local de `cs_de
 3. **Entrada:** a posição atual vai para `custom_acherus_orbs_return` e para a memória. O jogador desmonta, recebe a
    phase da partida e é teleportado ao spawn do time. Ao chegar, entra no raid do time (ver Raids); ao sair, volta ao
    grupo que tinha.
-4. **Preparação (2 min):** cada time fica preso a 10 jardas do spawn, com avisos aos 60 s e 30 s. Os anjos ficam
-   dentro do spawn, como no Warsong Gulch. Quem morre dá Release e ressuscita ali, na onda.
-5. **Partida (25 min):** os anjos do spawn somem e quem ainda estiver como fantasma ressuscita no spawn. As forjas
-   acendem (skybeam). Clicar numa forja dá o orbe: efeito da presença de DK no portador, escala, o feixe da forja apaga, o
+4. **Preparação (2 min):** cada time fica num domo no seu spawn (ver "Domo da preparação"), com avisos aos 60 s e
+   30 s. As forjas já ficam acesas, mas os orbes só podem ser pegos quando a batalha começa. Os anjos ficam dentro do
+   spawn, como no Warsong Gulch. Quem morre dá Release e ressuscita ali, na onda.
+5. **Partida (25 min):** os anjos do spawn, o domo e as paredes somem, e quem ainda estiver como fantasma ressuscita
+   no spawn. Clicar numa forja dá o orbe: efeito da presença de DK no portador, escala, o feixe da forja apaga, o
    jogador é desmontado e perde stealth/invisibilidade.
    O buff Berserk aparece no lugar do portal para o andar de cima (2383.65, -5645.20, 420.77, a 0,2 jarda do eixo porta →
    forja Unholy, então a mesma distância para os dois times), virado para o poço. É o GO 990004, cópia do 179905 das
@@ -199,7 +204,7 @@ santuário do mapa 609 é desligado e a flag PvP é forçada.
 |---|---|---|---|
 | Frost | 62893 Blue Skybeam | 10288, da Frost Presence (48263) | 55840 Blue Wyrmrest Warden Beam |
 | Blood | 62894 Red Skybeam | 10283, da Blood Presence (48266) | 55824 Red Wyrmrest Warden Beam |
-| Unholy | 62895 Green Skybeam | 10297, da Unholy Presence (48265) | 55838 Green Wyrmrest Warden Beam |
+| Unholy | 62895 Green Skybeam + 60426 Ghost State | 10297, da Unholy Presence (48265) | 55838 Green Wyrmrest Warden Beam |
 
 Todas as auras são dummy (sem efeito de stat) e ficam com duração infinita. As presenças não são aplicadas: têm efeito
 de stat (armadura, ameaça, dano, haste) e trocariam a presença de um DK. O script só toca o efeito delas
@@ -207,6 +212,23 @@ de stat (armadura, ameaça, dano, haste) e trocariam a presença de um DK. O scr
 permanente (`StateKit`) e trazem som, então repeti-los tocaria o som o tempo todo. Os modificadores de dano e cura
 ficam no `UnitScript` (`ModifyMeleeDamage`, `ModifySpellDamageTaken`, `ModifyPeriodicDamageAurasTick`, `OnHeal`), e
 `OnDamage`/`OnHeal` também alimentam as estatísticas do placar final.
+
+A forja Unholy tem, além do feixe verde, a aura 60426 Ghost State (`Spells::ForgeAuraUnholy`), permanente no bunny
+invisível que existe sobre cada forja (o mesmo que segura os feixes) enquanto o orbe está pronto. Um círculo do Scourge
+(`SC_CastingCircle_01`, GO 191206) foi testado no lugar do feixe verde e descartado.
+
+### Domo da preparação
+
+- **Visual:** o domo do Anti-Magic Zone do DK. No DBC, o visual da 50461 é um kit de canalização (SpellVisual 11242):
+  só aparece enquanto uma unidade "canaliza" a spell. O módulo cria o NPC `28306` (o totem do próprio AMZ) no centro
+  de cada spawn e o deixa canalizando a 50461 (`SetChannelSpellId`, como os Spirit Guides fazem com o feixe deles),
+  sem aplicar a aura. Escala 2 (o AMZ tem ~7 jardas na escala 1). O NPC fica amigável e passivo; jogadores não o veem,
+  e GMs veem só um totem de ar pequeno. A versão 72628 "Anti-Magic Zone (Small)" foi descartada (escala 0.25).
+- **Barreira:** octógono de 8 paredes invisíveis (GO 990005, modelo `CollisionWallPvP01` do 180322, ~11 jardas de
+  largura na escala 1, usado como barreira nas BGs), tamanho 0.8, a 10 jardas do spawn, um pouco por dentro da borda do
+  domo. Quem bloqueia é a colisão do cliente.
+- **Reserva:** a checagem de 1 s devolve ao spawn quem passar de 13 jardas (atrás das paredes).
+- O domo e as paredes somem quando a batalha começa (também com `.acherus begin`) e no fim da partida.
 
 ## Configuração (`worldserver.conf`, UTF-8 sem BOM)
 
@@ -216,7 +238,8 @@ AcherusOrbs.MinPlayersPerTeam = 10
 AcherusOrbs.KillBonus = 10
 ```
 
-As chaves não estão no `worldserver.conf.dist`. Sem elas, os valores padrão acima são usados (o log avisa).
+As chaves não estão no `worldserver.conf.dist` (que é do core); no ambiente de teste foram adicionadas ao fim do
+`worldserver.conf`, numa seção "BATTLE FOR ACHERUS". Sem elas, os valores padrão acima são usados (o log avisa).
 São lidas no `OnStartup` e no `.reload config`.
 
 ## Comandos GM (permissão `RBAC_PERM_COMMAND_DEBUG`)
@@ -261,15 +284,17 @@ Validado em jogo:
 - exigência de nível 80;
 - timers do placar final via battlefield status ("Time Elapsed" e "closing in");
 - coluna Flag Captures com os pontos de cada jogador;
-- jogadores parados durante o placar final e teleporte de saída no tempo certo.
+- jogadores parados durante o placar final e teleporte de saída no tempo certo;
+- auras do portador (efeito da presença uma vez, depois Wyrmrest) e a Ghost State na forja Unholy;
+- domo da preparação com paredes invisíveis e limitador de reserva;
+- forjas acesas desde a preparação.
 
 Implementado e compilado, **ainda não testado em jogo**:
 - entrada em partida em andamento (vagas por facção);
 - raid por time, com devolução do grupo original na saída;
 - +10 pontos por kill de inimigo (contam na coluna de pontos de quem deu o golpe final); vitória por 1600 checada no
-  update do mundo, já que a kill acontece no thread do mapa.
+  update do mundo, já que a kill acontece no thread do mapa;
 - comando `.acherus begin` (pular a preparação);
-- efeito da presença de DK uma vez ao pegar o orbe, depois aura fixa (Frost 55840, Blood 55824, Unholy 55838);
 - sons, mensagens de orbe no centro, Berserk e vitória validados; falta validar a cor amarela de "+N points" e da
   contagem do anjo (`SendAreaTriggerMessage`), o Berserk virado para o poço e o 51721 para todos.
 
@@ -281,6 +306,7 @@ Implementado e compilado, **ainda não testado em jogo**:
   logout, /leave e convite de alguém de fora corrigidos em até 1 s.
 - Testar "+N points" e a contagem do anjo em amarelo, o Berserk virado para o poço e a velocidade de 51721 para todos
   (e que ela some de todos ao sair, DKs inclusive).
+- Confirmar a visão de longe das forjas e dos feixes (200 jardas).
 - Decidir se as forjas acendendo tocam som (proposta: 8232, `BG_WS_SOUND_FLAGS_RESPAWNED`).
 - NPC de fila para a Horda (hoje só em Old Town). Eventual entrada pelo "Random Battleground" da UI.
 - Adicionar as chaves de configuração ao `worldserver.conf.dist` ao integrar no servidor de destino (no módulo, sem elas valem os padrões).

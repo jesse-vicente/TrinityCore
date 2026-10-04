@@ -24,3 +24,9 @@ INSERT INTO `gameobject_template` (`entry`, `type`, `displayId`, `name`, `IconNa
 DELETE FROM `gameobject_template` WHERE `entry` = 990004;
 INSERT INTO `gameobject_template` (`entry`, `type`, `displayId`, `name`, `IconName`, `castBarCaption`, `unk1`, `size`, `Data2`, `Data3`, `Data4`, `Data5`) VALUES
 (990004, 6, 5995, 'Berserk Buff', '', '', '', 1, 0, 23505, 1, 3);
+
+-- Invisible collision wall (display of 180322, CollisionWallPvP01), spawned as an octagon around each preparation dome
+-- by the script. At size 0.8 each wall is ~8.9 yards wide, enough to close the octagon at 10 yards from the spawn.
+DELETE FROM `gameobject_template` WHERE `entry` = 990005;
+INSERT INTO `gameobject_template` (`entry`, `type`, `displayId`, `name`, `IconName`, `castBarCaption`, `unk1`, `size`) VALUES
+(990005, 5, 6391, 'Preparation Wall', '', '', '', 0.8);

@@ -46,19 +46,24 @@ namespace AcherusOrbs
 {
     std::array<OrbTemplate, MAX_ORBS> const OrbTemplates =
     {{
-        { "Frost",  "ff69ccf0", Ids::GoFrostForge,  { 2493.37f, -5642.43f, 420.863f,  2.16421f  }, QuaternionData(0.0f, 0.0f,  0.882948f, 0.469471f), Spells::ForgeBeamFrost,  VisualKits::CarrierFrost,  Spells::CarrierAuraFrost  },
-        { "Blood",  "ffff3030", Ids::GoBloodForge,  { 2427.28f, -5544.45f, 420.863f, -0.983229f }, QuaternionData(0.0f, 0.0f, -0.47205f,  0.881572f), Spells::ForgeBeamBlood,  VisualKits::CarrierBlood,  Spells::CarrierAuraBlood  },
-        { "Unholy", "ff40ff40", Ids::GoUnholyForge, { 2509.31f, -5560.39f, 420.863f, -2.55402f  }, QuaternionData(0.0f, 0.0f, -0.957154f, 0.289578f), Spells::ForgeBeamUnholy, VisualKits::CarrierUnholy, Spells::CarrierAuraUnholy }
+        { "Frost",  "ff69ccf0", Ids::GoFrostForge,  { 2493.37f, -5642.43f, 420.863f,  2.16421f  }, QuaternionData(0.0f, 0.0f,  0.882948f, 0.469471f), Spells::ForgeBeamFrost,  0, VisualKits::CarrierFrost,  Spells::CarrierAuraFrost  },
+        { "Blood",  "ffff3030", Ids::GoBloodForge,  { 2427.28f, -5544.45f, 420.863f, -0.983229f }, QuaternionData(0.0f, 0.0f, -0.47205f,  0.881572f), Spells::ForgeBeamBlood,  0, VisualKits::CarrierBlood,  Spells::CarrierAuraBlood  },
+        { "Unholy", "ff40ff40", Ids::GoUnholyForge, { 2509.31f, -5560.39f, 420.863f, -2.55402f  }, QuaternionData(0.0f, 0.0f, -0.957154f, 0.289578f), Spells::ForgeBeamUnholy, Spells::ForgeAuraUnholy, VisualKits::CarrierUnholy, Spells::CarrierAuraUnholy }
     }};
 
     namespace
     {
         constexpr uint8 FirstPhaseBit = 9;                          // phases 1..256 are used by Acherus quests
         constexpr uint8 LastPhaseBit = 31;
-        constexpr float PreparationLeash = 10.0f;
+        constexpr float PreparationLeash = 13.0f;                  // beyond the walls: only catches who gets past them
+        constexpr float PreparationDomeScale = 2.0f;               // Anti-Magic Zone is ~7 yards at scale 1
+        constexpr uint8 PreparationWallCount = 8;                  // octagon around the dome
+        constexpr float PreparationWallDistance = 10.0f;           // from the spawn to the middle of each wall, just inside the dome
         constexpr float HonorableKillRange = 40.0f;
         constexpr uint8 RequiredLevel = 80;
         constexpr float SpiritGuideOffset = 3.0f;                   // spirit guide stands in front of the respawn point
+        // forges and their beams are seen from anywhere in the hall and outside it; only these objects, not the map setting
+        constexpr VisibilityDistanceType ForgeVisibility = VisibilityDistanceType::Large;
 
         char const* TeamName(TeamId team)
         {
@@ -514,13 +519,6 @@ namespace AcherusOrbs
             matchPlayer.HandledDeath = false;
             matchPlayer.LastCountdown = 0;
 
-            if (match.Status == MatchStatus::Preparation)
-            {
-                Position const& spawn = Positions::Spawn[matchPlayer.Team];
-                if (player->GetExactDist2d(&spawn) > PreparationLeash)
-                    player->NearTeleportTo(spawn);
-            }
-
             if (player->IsMounted() && GetCarriedOrb(match, guid))
             {
                 player->RemoveAurasByType(SPELL_AURA_MOUNTED);
@@ -533,6 +531,9 @@ namespace AcherusOrbs
 
         for (ObjectGuid const& guid : expired)
             RemovePlayer(match, guid, RemoveMode::Logout);
+
+        if (match.Status == MatchStatus::Preparation)
+            KeepInPreparationArea(match);
 
         CheckRaids(match);
     }
@@ -722,6 +723,10 @@ namespace AcherusOrbs
         if (Map* map = sMapMgr->CreateBaseMap(Ids::MapId))
             SpawnObjects(match, map);
 
+        // the forges already glow during the preparation, the orbs can only be taken once the battle begins
+        for (uint8 orb = 0; orb < MAX_ORBS; ++orb)
+            SetForgeBeam(match, OrbType(orb), true);
+
         Announce(match, CHAT_MSG_BG_SYSTEM_NEUTRAL, "The battle for Acherus begins in 2 minutes.");
     }
 
@@ -734,8 +739,11 @@ namespace AcherusOrbs
 
         // the starting area spirit guides leave with the preparation, their ghosts are revived where they are
         if (Map* map = sMapMgr->FindMap(Ids::MapId, 0))
+        {
             for (ObjectGuid& guid : match.PreparationSpiritGuides)
                 DespawnCreature(map, guid);
+            DespawnPreparationArea(match, map);
+        }
 
         for (auto& [guid, matchPlayer] : match.Players)
         {
@@ -985,6 +993,7 @@ namespace AcherusOrbs
             else
             {
                 forge->setActive(true);
+                forge->SetVisibilityDistanceOverride(ForgeVisibility);
                 if (map->AddToMap(forge))
                     state.Forge = forge->GetGUID();
                 else
@@ -995,6 +1004,7 @@ namespace AcherusOrbs
             {
                 trigger->SetPhaseMask(match.PhaseMask, true);
                 trigger->setActive(true);
+                trigger->SetVisibilityDistanceOverride(ForgeVisibility);
                 state.Trigger = trigger->GetGUID();
             }
         }
@@ -1004,6 +1014,8 @@ namespace AcherusOrbs
         {
             match.SpiritGuides[team] = SummonSpiritGuide(match, map, Positions::Respawn[team], TeamId(team));
             match.PreparationSpiritGuides[team] = SummonSpiritGuide(match, map, Positions::Spawn[team], TeamId(team));
+            match.PreparationDomes[team] = SummonPreparationDome(match, map, Positions::Spawn[team]);
+            SpawnPreparationWalls(match, map, Positions::Spawn[team]);
         }
     }
 
@@ -1024,6 +1036,85 @@ namespace AcherusOrbs
         guide->SetChannelSpellId(Spells::SpiritHealChannel);
         guide->SetModCastingSpeed(1.0f);
         return guide->GetGUID();
+    }
+
+    // the Anti-Magic Zone dome is a channel kit (SpellVisual 11242): it is only drawn while a unit channels the spell, so the
+    // trigger "channels" it like the spirit guides do with their visual, and the aura itself is never applied
+    ObjectGuid Manager::SummonPreparationDome(Match const& match, Map* map, Position const& center)
+    {
+        TempSummon* dome = map->SummonCreature(Ids::NpcPreparationDome, center);
+        if (!dome)
+            return ObjectGuid::Empty;
+
+        // not summoned as a totem, so it casts nothing; kept friendly and passive anyway
+        dome->SetFaction(FACTION_FRIENDLY);
+        dome->SetReactState(REACT_PASSIVE);
+
+        dome->SetPhaseMask(match.PhaseMask, true);
+        dome->setActive(true);
+        dome->SetVisibilityDistanceOverride(ForgeVisibility);
+        dome->SetObjectScale(PreparationDomeScale);
+        dome->SetChannelObjectGuid(dome->GetGUID());
+        dome->SetChannelSpellId(Spells::PreparationDome);
+        return dome->GetGUID();
+    }
+
+    // octagon of invisible collision walls (CollisionWallPvP01, ~11 yards wide at scale 1, the model extends along its
+    // local Y axis) tangent to a circle around the spawn; the client blocks movement through them
+    void Manager::SpawnPreparationWalls(Match& match, Map* map, Position const& center)
+    {
+        for (uint8 i = 0; i < PreparationWallCount; ++i)
+        {
+            float const angle = float(i) * 2.0f * float(M_PI) / float(PreparationWallCount);
+            Position const position(center.GetPositionX() + PreparationWallDistance * std::cos(angle),
+                center.GetPositionY() + PreparationWallDistance * std::sin(angle), center.GetPositionZ(), angle);
+
+            GameObject* wall = new GameObject();
+            if (!wall->Create(map->GenerateLowGuid<HighGuid::GameObject>(), Ids::GoPreparationWall, map, match.PhaseMask, position,
+                QuaternionData::fromEulerAnglesZYX(angle, 0.0f, 0.0f), 255, GO_STATE_READY))
+            {
+                TC_LOG_ERROR("scripts", "AcherusOrbs: cannot create preparation wall gameobject {} for match {}", Ids::GoPreparationWall, match.Id);
+                delete wall;
+                continue;
+            }
+
+            wall->setActive(true);
+            if (map->AddToMap(wall))
+                match.PreparationWalls.push_back(wall->GetGUID());
+            else
+                delete wall;
+        }
+    }
+
+    void Manager::DespawnPreparationArea(Match& match, Map* map)
+    {
+        for (ObjectGuid& guid : match.PreparationDomes)
+            DespawnCreature(map, guid);
+
+        for (ObjectGuid const& guid : match.PreparationWalls)
+        {
+            if (GameObject* wall = map->GetGameObject(guid))
+            {
+                wall->SetRespawnTime(0);
+                wall->Delete();
+            }
+        }
+        match.PreparationWalls.clear();
+    }
+
+    // backup of the walls, checked with the other player checks (every second) while the gates are closed
+    void Manager::KeepInPreparationArea(Match& match)
+    {
+        for (auto const& [guid, matchPlayer] : match.Players)
+        {
+            Player* player = ObjectAccessor::FindConnectedPlayer(guid);
+            if (!player || !player->IsInWorld() || player->IsBeingTeleported() || player->GetMapId() != Ids::MapId || !player->IsAlive())
+                continue;
+
+            Position const& spawn = Positions::Spawn[matchPlayer.Team];
+            if (player->GetExactDist2d(&spawn) > PreparationLeash)
+                player->NearTeleportTo(spawn);
+        }
     }
 
     void Manager::DespawnCreature(Map* map, ObjectGuid& guid)
@@ -1076,6 +1167,8 @@ namespace AcherusOrbs
 
         for (ObjectGuid& guid : match.PreparationSpiritGuides)
             DespawnCreature(map, guid);
+
+        DespawnPreparationArea(match, map);
     }
 
     void Manager::SpawnBerserkBuff(Match& match, Map* map)
@@ -1152,19 +1245,27 @@ namespace AcherusOrbs
         if (!map)
             return;
 
-        Creature* trigger = map->GetCreature(match.Orbs[orb].Trigger);
+        OrbTemplate const& orbTemplate = OrbTemplates[orb];
+        OrbState& state = match.Orbs[orb];
+
+        Creature* trigger = map->GetCreature(state.Trigger);
         if (!trigger)
             return;
 
-        uint32 const beam = OrbTemplates[orb].ForgeBeam;
-        if (!on)
-            trigger->RemoveAurasDueToSpell(beam);
-        else if (!trigger->HasAura(beam))
-            if (Aura* aura = trigger->AddAura(beam, trigger))
-            {
-                aura->SetMaxDuration(-1);
-                aura->SetDuration(-1);
-            }
+        for (uint32 spellId : { orbTemplate.ForgeBeam, orbTemplate.ForgeAura })
+        {
+            if (!spellId)
+                continue;
+
+            if (!on)
+                trigger->RemoveAurasDueToSpell(spellId);
+            else if (!trigger->HasAura(spellId))
+                if (Aura* aura = trigger->AddAura(spellId, trigger))
+                {
+                    aura->SetMaxDuration(-1);
+                    aura->SetDuration(-1);
+                }
+        }
     }
 
     void Manager::OnForgeUse(Player* player, GameObject* forge)
@@ -1372,8 +1473,10 @@ namespace AcherusOrbs
     {
         // the orb is never kept across a login, its aura may still have been saved by a crash
         for (OrbTemplate const& orbTemplate : OrbTemplates)
+        {
             if (orbTemplate.CarrierAura)
                 player->RemoveAurasDueToSpell(orbTemplate.CarrierAura);
+        }
 
         // back within MAX_OFFLINE_TIME, the player is still in the match where he logged out
         if (Match* match = GetMatch(player->GetGUID()))

@@ -54,12 +54,14 @@ namespace AcherusOrbs
         static constexpr uint32 HallAreaId = 4342;                  // Acherus: The Ebon Hold
         static constexpr uint32 NpcBattlemaster = 990000;
         static constexpr uint32 NpcBeamTrigger = 23837;              // ELM General Purpose Bunny
+        static constexpr uint32 NpcPreparationDome = 28306;          // Anti-Magic Zone totem of the death knights: invisible, small air totem for GMs
         static constexpr uint32 NpcSpiritGuideAlliance = 13116;      // same spirit guides as the battlegrounds
         static constexpr uint32 NpcSpiritGuideHorde = 13117;
         static constexpr uint32 GoFrostForge = 990001;
         static constexpr uint32 GoBloodForge = 990002;
         static constexpr uint32 GoUnholyForge = 990003;
         static constexpr uint32 GoBerserkBuff = 990004;              // Berserk Buff (179905) that despawns when used
+        static constexpr uint32 GoPreparationWall = 990005;          // invisible PvP collision wall (display of 180322), rings the preparation domes
     }
 
     namespace Spells
@@ -67,10 +69,12 @@ namespace AcherusOrbs
         static constexpr uint32 UndyingResolve = 51915;              // zone aura of 4298, prevents dying
         static constexpr uint32 DominionOverAcherus = 51721;        // area aura of 4342 for death knights (quest 12657), +75% run speed
         static constexpr uint32 SpiritHealChannel = 22011;           // spirit guide channel visual
+        static constexpr uint32 PreparationDome = 50461;             // Anti-Magic Zone: only its channel kit is used, the aura is never applied
 
         static constexpr uint32 ForgeBeamFrost = 62893;              // Blue Skybeam
         static constexpr uint32 ForgeBeamBlood = 62894;              // Red Skybeam
         static constexpr uint32 ForgeBeamUnholy = 62895;             // Green Skybeam
+        static constexpr uint32 ForgeAuraUnholy = 60426;             // Ghost State, on the Unholy forge trigger together with its beam
 
         // permanent carrier auras, all dummy (no stat effect)
         static constexpr uint32 CarrierAuraFrost = 55840;            // Blue Wyrmrest Warden Beam (banish_chest_blue)
@@ -188,6 +192,7 @@ namespace AcherusOrbs
         Position ForgePosition;
         QuaternionData ForgeRotation;
         uint32 ForgeBeam;
+        uint32 ForgeAura;                                           // extra permanent aura of the forge trigger while the orb is ready (0 = none)
         uint32 CarrierVisualKit;
         uint32 CarrierAura;
     };
@@ -261,6 +266,8 @@ namespace AcherusOrbs
         std::array<OrbState, MAX_ORBS> Orbs;
         std::array<ObjectGuid, PVP_TEAMS_COUNT> SpiritGuides;
         std::array<ObjectGuid, PVP_TEAMS_COUNT> PreparationSpiritGuides;
+        std::array<ObjectGuid, PVP_TEAMS_COUNT> PreparationDomes;
+        std::vector<ObjectGuid> PreparationWalls;
         ObjectGuid BerserkBuff;
         bool BerserkBuffArmed = false;                              // seen ready since it was spawned
         uint32 BerserkBuffTimer = 0;                                // time left to respawn it
@@ -314,6 +321,7 @@ namespace AcherusOrbs
         void EndMatch(Match& match, TeamId winner);
         void UpdateMatch(Match& match, uint32 diff);
         void CheckPlayers(Match& match);
+        void KeepInPreparationArea(Match& match);
 
         // raids
         static Group* GetRaid(Match const& match, TeamId team);
@@ -333,6 +341,9 @@ namespace AcherusOrbs
         void SpawnObjects(Match& match, Map* map);
         void DespawnObjects(Match& match, Map* map);
         static ObjectGuid SummonSpiritGuide(Match const& match, Map* map, Position const& graveyard, TeamId team);
+        static ObjectGuid SummonPreparationDome(Match const& match, Map* map, Position const& center);
+        static void SpawnPreparationWalls(Match& match, Map* map, Position const& center);
+        static void DespawnPreparationArea(Match& match, Map* map);
         static void DespawnCreature(Map* map, ObjectGuid& guid);
         static Position const& GetGraveyard(Match const& match, TeamId team);
         void SendResurrectCountdown(Match const& match, MatchPlayer& matchPlayer, Player* player, bool force = false) const;
