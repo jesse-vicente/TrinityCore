@@ -737,8 +737,11 @@ class TC_GAME_API PlayerScript : public ScriptObject
         // Called before a player is sent to a graveyard, set handled to skip the default graveyard teleport
         virtual void OnRepopAtGraveyard(Player* player, bool& handled);
 
-        // Called when a player interacts with or queries an area spirit healer outside of battlegrounds and battlefields
+        // Called when a player queries an area spirit healer's timer outside of battlegrounds and battlefields
         virtual void OnSpiritHealerQuery(Player* player, Creature* spiritHealer, bool& handled);
+
+        // Called when a player queues at an area spirit healer outside of battlegrounds and battlefields
+        virtual void OnSpiritHealerQueue(Player* player, Creature* spiritHealer, bool& handled);
 
         // Called when a player logs out, before the player is saved (OnLogout is called after the save)
         virtual void OnBeforeLogout(Player* player);
@@ -1079,6 +1082,7 @@ class TC_GAME_API ScriptMgr
         bool OnPlayerCheckSanctuary(Player* player, bool isSanctuary);
         bool OnPlayerRepopAtGraveyard(Player* player);
         bool OnPlayerSpiritHealerQuery(Player* player, Creature* spiritHealer);
+        bool OnPlayerSpiritHealerQueue(Player* player, Creature* spiritHealer);
         void OnPlayerBeforeLogout(Player* player);
         void OnPlayerPVPLogDataRequest(Player* player);
         void OnPlayerRequestBattlefieldStatus(Player* player);

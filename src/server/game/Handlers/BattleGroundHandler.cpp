@@ -767,7 +767,7 @@ void WorldSession::HandleAreaSpiritHealerQueueOpcode(WorldPackets::Battleground:
         bf->AddPlayerToResurrectQueue(areaSpiritHealerQueue.HealerGuid, _player->GetGUID());
 
     if (!bg && !bf)
-        sScriptMgr->OnPlayerSpiritHealerQuery(_player, spiritHealer);
+        sScriptMgr->OnPlayerSpiritHealerQueue(_player, spiritHealer);
 }
 
 void WorldSession::HandleHearthAndResurrect(WorldPackets::Battleground::HearthAndResurrect& /*hearthAndResurrect*/)

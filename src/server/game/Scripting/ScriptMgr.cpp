@@ -2011,6 +2011,13 @@ bool ScriptMgr::OnPlayerSpiritHealerQuery(Player* player, Creature* spiritHealer
     return handled;
 }
 
+bool ScriptMgr::OnPlayerSpiritHealerQueue(Player* player, Creature* spiritHealer)
+{
+    bool handled = false;
+    FOREACH_SCRIPT(PlayerScript)->OnSpiritHealerQueue(player, spiritHealer, handled);
+    return handled;
+}
+
 void ScriptMgr::OnPlayerBeforeLogout(Player* player)
 {
     FOREACH_SCRIPT(PlayerScript)->OnBeforeLogout(player);
@@ -2792,6 +2799,10 @@ void PlayerScript::OnRepopAtGraveyard(Player* /*player*/, bool& /*handled*/)
 }
 
 void PlayerScript::OnSpiritHealerQuery(Player* /*player*/, Creature* /*spiritHealer*/, bool& /*handled*/)
+{
+}
+
+void PlayerScript::OnSpiritHealerQueue(Player* /*player*/, Creature* /*spiritHealer*/, bool& /*handled*/)
 {
 }
 
