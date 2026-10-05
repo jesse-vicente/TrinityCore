@@ -65,6 +65,7 @@ namespace AcherusOrbs
         constexpr float HonorableKillRange = 40.0f;
         constexpr uint8 RequiredLevel = 80;
         constexpr float SpiritGuideOffset = 3.0f;                   // spirit guide stands in front of the respawn point
+        constexpr float SpiritHealerRange = 17.0f;                  // client AREA_SPIRIT_HEALER_IN_RANGE radius, measured in game
         // forges and their beams are seen from anywhere in the hall and outside it; only these objects, not the map setting
         constexpr VisibilityDistanceType ForgeVisibility = VisibilityDistanceType::Large;
 
@@ -909,21 +910,16 @@ namespace AcherusOrbs
                 if (!matchPlayer.HandledDeath)
                 {
                     matchPlayer.HandledDeath = true;
-                    matchPlayer.LastCountdown = 0;
                     if (match.Status == MatchStatus::InProgress)
                         ++matchPlayer.Deaths;
                     if (Optional<OrbType> orb = GetCarriedOrb(match, guid))
                         DropOrb(match, *orb, true);
                 }
 
-                // the native spirit healer timer frame does not work outside of battlegrounds, released players get a countdown instead
-                if (player->HasFlag(PLAYER_FLAGS, PLAYER_FLAGS_GHOST))
-                    SendResurrectCountdown(match, matchPlayer, player);
                 continue;
             }
 
             matchPlayer.HandledDeath = false;
-            matchPlayer.LastCountdown = 0;
 
             if (player->IsMounted() && GetCarriedOrb(match, guid))
             {
@@ -1023,34 +1019,46 @@ namespace AcherusOrbs
         }
     }
 
+    // like Battleground::_ProcessResurrect: only the players still in range of the guide they queued at are revived on the wave
     void Manager::ResurrectDead(Match& match)
     {
-        for (auto& [guid, matchPlayer] : match.Players)
+        for (auto const& [guid, guideGuid] : match.ResurrectQueue)
         {
-            if (!matchPlayer.HandledDeath)
-                continue;
-
             Player* player = ObjectAccessor::FindConnectedPlayer(guid);
             if (!player || !player->IsInWorld() || player->IsBeingTeleported())
                 continue;
 
-            if (player->IsAlive())
-            {
-                matchPlayer.HandledDeath = false;
-                continue;
-            }
-
-            // only released players are revived by the spirit guide
-            if (!player->HasFlag(PLAYER_FLAGS, PLAYER_FLAGS_GHOST))
+            // the guide revives only released ghosts; anyone else just leaves the queue
+            if (player->IsAlive() || !player->HasFlag(PLAYER_FLAGS, PLAYER_FLAGS_GHOST))
                 continue;
 
+            auto itr = match.Players.find(guid);
+            if (itr == match.Players.end())
+                continue;
+
+            // the client hides its popup once the ghost leaves the guide, so it must not be revived either
+            Creature* guide = player->GetMap()->GetCreature(guideGuid);
+            if (!guide)
+                guide = player->GetMap()->GetCreature(match.SpiritGuides[itr->second.Team]);
+            if (!guide)
+                guide = player->GetMap()->GetCreature(match.PreparationSpiritGuides[itr->second.Team]);
+            if (!guide || player->GetDistance(guide) > SpiritHealerRange)
+                continue;
+
+            MatchPlayer& matchPlayer = itr->second;
             matchPlayer.HandledDeath = false;
-            player->ResurrectPlayer(1.0f);
-            player->SpawnCorpseBones();
 
-            Position const& graveyard = GetGraveyard(match, matchPlayer.Team);
-            player->TeleportTo(Ids::MapId, graveyard.GetPositionX(), graveyard.GetPositionY(), graveyard.GetPositionZ(), graveyard.GetOrientation());
+            // same visuals as Battleground::_ProcessResurrect
+            guide->CastSpell(guide, Spells::SpiritHeal, true);
+            player->CastSpell(player, Spells::ResurrectionVisual, true);
+
+            player->ResurrectPlayer(1.0f);
+            player->CastSpell(player, Spells::ResurrectEffect, true);
+            player->CastSpell(player, Spells::SpiritHealMana, true);
+            player->SpawnCorpseBones(false);
         }
+
+        match.ResurrectQueue.clear();
     }
 
     void Manager::UpdateCarriers(Match& match, uint32 diff)
@@ -1269,6 +1277,8 @@ namespace AcherusOrbs
             ClearBattlefieldStatus(itr->second, player);
 
         WorldLocation const destination = itr->second.Return;
+        if (match.ResurrectQueue.erase(guid) && player)
+            player->RemoveAurasDueToSpell(Spells::WaitingForResurrect);
         match.Players.erase(itr);
         _playerMatch.erase(guid);
 
@@ -1343,33 +1353,12 @@ namespace AcherusOrbs
 
         // during the preparation the graveyard is inside the starting area, so nobody starts outside of it
         player->NearTeleportTo(GetGraveyard(*match, itr->second.Team));
-        itr->second.LastCountdown = 0;
         return true;
     }
 
     Position const& Manager::GetGraveyard(Match const& match, TeamId team)
     {
         return match.Status == MatchStatus::Preparation ? Positions::Spawn[team] : Positions::Respawn[team];
-    }
-
-    void Manager::SendResurrectCountdown(Match const& match, MatchPlayer& matchPlayer, Player* player, bool force) const
-    {
-        static constexpr std::array<uint32, 8> Steps = { 30, 20, 10, 5, 4, 3, 2, 1 };
-
-        uint32 const left = Timers::ResurrectWave - std::min(match.ResurrectTimer, Timers::ResurrectWave);
-        uint32 const seconds = std::max<uint32>((left + IN_MILLISECONDS - 1) / IN_MILLISECONDS, 1);
-
-        // first message right after the release or a new wave, then only when a step is reached
-        bool show = force || !matchPlayer.LastCountdown || seconds > matchPlayer.LastCountdown;
-        for (uint32 step : Steps)
-            if (seconds <= step && step < matchPlayer.LastCountdown)
-                show = true;
-
-        if (!show || seconds == matchPlayer.LastCountdown)
-            return;
-
-        matchPlayer.LastCountdown = seconds;
-        player->GetSession()->SendAreaTriggerMessage("Resurrection in %u second%s", seconds, seconds == 1 ? "" : "s");
     }
 
     void Manager::RestorePhase(Player* player)
@@ -1552,10 +1541,35 @@ namespace AcherusOrbs
         if (match->SpiritGuides[team] != spiritHealer->GetGUID() && match->PreparationSpiritGuides[team] != spiritHealer->GetGUID())
             return false;
 
-        // no SMSG_AREA_SPIRIT_HEALER_TIME: outside of battlegrounds the client keeps re-querying it, flooding until it disconnects
-        if (player->HasFlag(PLAYER_FLAGS, PLAYER_FLAGS_GHOST))
-            SendResurrectCountdown(*match, itr->second, player, true);
+        // native timer, so the client shows its AREA_SPIRIT_HEAL popup (GetAreaSpiritHealerTime) while a ghost
+        WorldPackets::Battleground::AreaSpiritHealerTime time;
+        time.HealerGuid = spiritHealer->GetGUID();
+        time.TimeLeft = int32(match->ResurrectTimer < Timers::ResurrectWave ? Timers::ResurrectWave - match->ResurrectTimer : 0);
+        player->SendDirectMessage(time.Write());
         return true;
+    }
+
+    // walking into a spirit guide's range queues the player for the next wave, like a battleground
+    void Manager::OnSpiritHealerQueue(Player* player, Creature* spiritHealer, bool& handled)
+    {
+        Match* match = GetMatch(player->GetGUID());
+        if (!match)
+            return;
+
+        auto itr = match->Players.find(player->GetGUID());
+        if (itr == match->Players.end())
+            return;
+
+        TeamId const team = itr->second.Team;
+        if (match->SpiritGuides[team] != spiritHealer->GetGUID() && match->PreparationSpiritGuides[team] != spiritHealer->GetGUID())
+            return;
+
+        handled = true;
+
+        // same visual as Battleground::AddPlayerToResurrectQueue: refreshed on every queue, so leaving and
+        // re-entering the guide's range brings the aura back without waiting for the next wave
+        match->ResurrectQueue.insert_or_assign(player->GetGUID(), spiritHealer->GetGUID());
+        player->CastSpell(player, Spells::WaitingForResurrect, true);
     }
 
     void Manager::DespawnObjects(Match& match, Map* map)

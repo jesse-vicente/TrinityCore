@@ -208,6 +208,11 @@ public:
         if (!handled)
             handled = sAcherusOrbs->OnSpiritHealerQuery(player, spiritHealer);
     }
+
+    void OnSpiritHealerQueue(Player* player, Creature* spiritHealer, bool& handled) override
+    {
+        sAcherusOrbs->OnSpiritHealerQueue(player, spiritHealer, handled);
+    }
 };
 
 class unit_acherus_orbs : public UnitScript
@@ -299,7 +304,7 @@ public:
 
         if (sAcherusOrbs->Dequeue(player->GetGUID()))
         {
-            handler->PSendSysMessage("{} left the Acherus queue.", player->GetName());
+            handler->SendSysMessage(Trinity::StringFormat("{} left the Acherus queue.", player->GetName()));
             return true;
         }
 
@@ -311,7 +316,7 @@ public:
             return false;
         }
 
-        handler->PSendSysMessage("{} queued for Acherus.", player->GetName());
+        handler->SendSysMessage(Trinity::StringFormat("{} queued for Acherus.", player->GetName()));
         return true;
     }
 
@@ -349,7 +354,7 @@ public:
     static bool HandleStatusCommand(ChatHandler* handler)
     {
         std::array<std::size_t, PVP_TEAMS_COUNT> const queued = sAcherusOrbs->GetQueueSizes();
-        handler->PSendSysMessage("{}\nQueue: Alliance {}, Horde {}", sAcherusOrbs->GetStatus(), queued[TEAM_ALLIANCE], queued[TEAM_HORDE]);
+        handler->SendSysMessage(Trinity::StringFormat("{}\nQueue: Alliance {}, Horde {}", sAcherusOrbs->GetStatus(), queued[TEAM_ALLIANCE], queued[TEAM_HORDE]));
         return true;
     }
 };

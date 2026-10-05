@@ -70,6 +70,11 @@ namespace AcherusOrbs
         static constexpr uint32 UndyingResolve = 51915;              // zone aura of 4298, prevents dying
         static constexpr uint32 DominionOverAcherus = 51721;        // area aura of 4342 for death knights (quest 12657), +75% run speed
         static constexpr uint32 SpiritHealChannel = 22011;           // spirit guide channel visual
+        static constexpr uint32 WaitingForResurrect = 2584;          // "Waiting to Resurrect", on the ghost while it waits at the guide
+        static constexpr uint32 SpiritHeal = 22012;                  // Spirit Heal, effect 117, cast on the guide for the revive visual
+        static constexpr uint32 ResurrectionVisual = 24171;          // Resurrection Impact Visual, cast on the player on the wave
+        static constexpr uint32 ResurrectEffect = 6962;              // same spell Battleground::_ProcessResurrect casts on the revived player
+        static constexpr uint32 SpiritHealMana = 44535;              // Spirit Heal, on the player after the resurrection
         static constexpr uint32 PreparationDome = 50461;             // Anti-Magic Zone: only its channel kit is used, the aura is never applied
 
         static constexpr uint32 ForgeBeamFrost = 62893;              // Blue Skybeam
@@ -207,7 +212,6 @@ namespace AcherusOrbs
         TeamId Team = TEAM_ALLIANCE;
         WorldLocation Return;
         bool HandledDeath = false;
-        uint32 LastCountdown = 0;                                   // last resurrection countdown shown, in seconds
         bool WorldStatesSent = false;
         bool Offline = false;
         uint32 OfflineTimer = 0;
@@ -274,6 +278,7 @@ namespace AcherusOrbs
         bool BerserkBuffArmed = false;                              // seen ready since it was spawned
         uint32 BerserkBuffTimer = 0;                                // time left to respawn it
         std::array<ObjectGuid, PVP_TEAMS_COUNT> Raids;              // battlefield raid of each team, not stored in the database
+        std::unordered_map<ObjectGuid, ObjectGuid> ResurrectQueue; // players waiting at a spirit healer for the next wave, mapped to that guide
     };
 
     class Manager
@@ -302,6 +307,7 @@ namespace AcherusOrbs
         bool IsSanctuaryDisabled(Player const* player) const;
         bool OnRepop(Player* player);
         bool OnSpiritHealerQuery(Player* player, Creature* spiritHealer);
+        void OnSpiritHealerQueue(Player* player, Creature* spiritHealer, bool& handled);
         void OnLeaveRequest(Player* player);
         void OnJoinRealBattlegroundQueue(Player* player);
         void OnBeforeLogout(Player* player);
@@ -354,7 +360,6 @@ namespace AcherusOrbs
         static void DespawnPreparationArea(Match& match, Map* map);
         static void DespawnCreature(Map* map, ObjectGuid& guid);
         static Position const& GetGraveyard(Match const& match, TeamId team);
-        void SendResurrectCountdown(Match const& match, MatchPlayer& matchPlayer, Player* player, bool force = false) const;
         void SpawnBerserkBuff(Match& match, Map* map);
         void UpdateBerserkBuff(Match& match, uint32 diff);
         void SetForgeBeam(Match& match, OrbType orb, bool on);

@@ -22,7 +22,7 @@ todo o comportamento é server-side e reaproveita só dados que o cliente já co
 | Orbes | 1 por jogador, sem montaria; morte do portador devolve o orbe à forja | warcraft.wiki.gg |
 | Kill | +10 pontos para o time a cada kill de jogador inimigo, portador ou não (sem bônus extra por portador; a spell 112910 não existe no 3.3.5) | decisão do projeto |
 | Preparação | 2 min, cada time preso ao seu spawn, dentro de um domo com paredes invisíveis | duração: padrão de BG do core; domo: decisão do projeto, inspirado nas barreiras do Eye of the Storm |
-| Ressurreição | ondas de 30 s, só para quem deu "Release Spirit" | padrão de BG do core |
+| Ressurreição | ondas de 30 s, só para quem deu "Release Spirit" e está no range do guide | padrão de BG do core |
 | Desconexão | lugar mantido por 300 s | `MAX_OFFLINE_TIME` das BGs |
 | Nível | apenas 80 | decisão do projeto |
 | Buff | 1 Berserk (spell 23505) no lugar do portal para o andar de cima, de volta 3 min depois de pego | posição: decisão do projeto; tempo: `BUFF_RESPAWN_TIME` das BGs |
@@ -60,6 +60,7 @@ da porta; o resto (corredor, área externa, outros andares) = fora.
 | `AcherusOrbsScripts.cpp` | NPC da fila, forja clicável, `PlayerScript`, `UnitScript`, `WorldScript`, comandos `.acherus` |
 | `sql/custom/world/2026_10_01_00_world_acherus_orbs.sql` | NPC 990000, textos de gossip 990000/990001, forjas 990001–990003, buff Berserk 990004, parede invisível da preparação 990005 |
 | `sql/custom/characters/2026_10_01_00_characters_acherus_orbs.sql` | tabela `custom_acherus_orbs_return` |
+| `sql/custom/world/2026_10_04_00_world_acherus_orbs_spirit_healer.sql` | linhas de `spell_area` (área 4342) que liberam 2584/22012/44535 no Acherus |
 | `client/acherus_orbs_ui.lua` | Lua de UI enviado ao cliente (relabels do EotS), ver "Relabel de UI no cliente" |
 
 Os SQLs são aplicados automaticamente pelo updater do worldserver (`updates_include` já aponta para `sql/custom`).
@@ -75,7 +76,8 @@ Todos são `PlayerScript`, sem efeito quando nenhum script os usa.
 | `OnLeaveBattlefield` | `HandleBattlefieldLeaveOpcode` | botão "Leave Battleground" do placar final |
 | `OnCheckSanctuary` | `Player::UpdateArea` | o mapa 609 inteiro é santuário (`AreaTableEntry::IsSanctuary`), o que impede PvP |
 | `OnRepopAtGraveyard` | início de `Player::RepopAtGraveyard` | mandar o fantasma para o anjo do time, e não para o cemitério dos DKs |
-| `OnSpiritHealerQuery` | clique no Spirit Guide (`NPCHandler`) e `CMSG_AREA_SPIRIT_HEALER_QUERY/QUEUE`, fora de BG/Battlefield | mostrar o tempo até a próxima onda |
+| `OnSpiritHealerQuery` | clique no Spirit Guide (`NPCHandler`) e `CMSG_AREA_SPIRIT_HEALER_QUERY`, fora de BG/Battlefield | responder com o `SMSG_AREA_SPIRIT_HEALER_TIME` (timer do popup nativo) |
+| `OnSpiritHealerQueue` | `CMSG_AREA_SPIRIT_HEALER_QUEUE`, fora de BG/Battlefield | entrar na fila de ressurreição do wave, mapeado ao guide (visual 2584) |
 | `OnBeforeLogout` | `WorldSession::LogoutPlayer`, junto do `EventPlayerLoggedOut` das BGs, **antes do save** | soltar o orbe antes de o personagem ser salvo |
 | `OnPVPLogDataRequest` | `HandlePVPLogDataOpcode` (`MSG_PVP_LOG_DATA`), fora de BG/Battlefield | responder ao pedido do placar com os dados atuais, deixando-o ao vivo durante a partida |
 | `OnRequestBattlefieldStatus` | fim de `HandleRequestBattlefieldStatusOpcode` (`CMSG_BATTLEFIELD_STATUS`) | manter o botão de BG no minimapa respondendo o pedido de status do cliente |
@@ -152,10 +154,16 @@ Testado em jogo com os comandos `.debug bgui`, que eram um patch local de `cs_de
   segundos, então menos de 1 minuto aparece vazio. Com esse status, o cliente também passa a esperar a coluna do EotS
   (Flag Captures) no placar: cada jogador precisa mandar 1 stat, senão aparece lixo de memória. A coluna mostra os
   pontos que o jogador fez para o time (ticks como portador + bônus de kill). O cliente deixa o valor 0 em branco.
-- **Contador do Spirit Healer:** o frame nativo não funciona fora de BG. Ao receber `SMSG_AREA_SPIRIT_HEALER_TIME`, o
-  cliente abre e fecha o frame em loop e acaba desconectado. Por isso a contagem é feita com `SendAreaTriggerMessage`
-  ("Resurrection in N seconds") logo após o Release e aos 30/20/10/5/4/3/2/1 s. As consultas automáticas do cliente
-  são consumidas sem resposta.
+- **Spirit Healer:** funciona como nas BGs. Ao entrar no range do spirit guide com o ghost, o cliente manda
+  `CMSG_AREA_SPIRIT_HEALER_QUEUE` (`AREA_SPIRIT_HEALER_IN_RANGE` → `AcceptAreaSpiritHeal()` + `StaticPopup_Show("AREA_SPIRIT_HEAL")`),
+  o módulo responde com `SMSG_AREA_SPIRIT_HEALER_TIME` (o mesmo `TimeLeft` da BG) e o popup nativo `AREA_SPIRIT_HEAL` mostra
+  o contador via `GetAreaSpiritHealerTime()`. O jogador entra na fila de ressurreição (`OnSpiritHealerQueue`) com o visual
+  2584 "Waiting to Resurrect" e o wave de 30 s revive **só quem ainda está dentro do range do guide** (17 jardas, o raio
+  `AREA_SPIRIT_HEALER_IN_RANGE` do cliente, medido em jogo), **no lugar** e com os visuais da BG
+  (`Battleground::_ProcessResurrect`: 22012 no guide, 24171 + 6962 + 44535 no jogador). Quem sai do range não é revivido,
+  e a aura 2584 é removida quando o jogador deixa a fila. O core restringe 2584/22012/44535 a BG/Wintergrasp
+  (`SpellInfo::CheckLocation`), então o módulo depende das linhas de `spell_area` da área 4342
+  (`2026_10_04_00_world_acherus_orbs_spirit_healer.sql`) para os casts passarem.
 - **Ícone de BG no minimapa:** aparece na fila, na preparação e durante toda a partida. O cliente descarta o status
   enviado antes de terminar de carregar o mundo; por isso o módulo responde o `CMSG_BATTLEFIELD_STATUS` com o status
   fake (active ou queued) e reenvia o active assim que o jogador entra no mundo. Clicar no ícone abre o placar. O nome
