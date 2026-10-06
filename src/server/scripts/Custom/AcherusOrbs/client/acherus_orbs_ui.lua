@@ -164,6 +164,172 @@ watcher:RegisterEvent("UPDATE_BATTLEFIELD_SCORE")
 watcher:RegisterEvent("PLAYER_ENTERING_WORLD")
 watcher:SetScript("OnEvent", RelabelAll)
 
+-- ---------------------------------------------------------------------------- minimap orb markers
+-- The server pushes AcherusBG_Orbs.Update(px, py, x, y, name, ...) every 0.25 s through the same addon
+-- message channel. Positions are world coordinates (yards). The Ebon Hold world map is rotated 90 degrees
+-- and mirrored on the minimap (its X comes from the world Y, its Y from the world X), so a world offset
+-- (dx, dy) maps to the minimap as (-dy, dx), scaled by the minimap's own world span.
+
+local ORB_PRESENCE_ICON = {
+    "Interface\\Icons\\Spell_Deathknight_FrostPresence",
+    "Interface\\Icons\\Spell_Deathknight_BloodPresence",
+    "Interface\\Icons\\Spell_Deathknight_UnholyPresence",
+}
+
+-- yards covered across the minimap at each zoom level (0 based like Minimap:GetZoom). Astrolabe's indoor
+-- MinimapSize is 20% too large for the Ebon Hold, so these values are already scaled down to match.
+local MINIMAP_WORLD_SPAN = { [0] = 250, [1] = 200, [2] = 150, [3] = 100, [4] = 66 + 2 / 3, [5] = 41 + 2 / 3 }
+
+-- map <-> world transform of the Ebon Hold, from the client's WorldMapArea.dbc (same for every client of
+-- this build): worldY = MAP_A + MAP_B * mapX, worldX = MAP_C + MAP_D * mapY
+local MAP_A, MAP_B = -4050, -3159
+local MAP_C, MAP_D = 3087, -2108
+
+AcherusBG_Orbs = { data = nil, icons = {} }
+
+local function CreateMarker(texture)
+    local frame = CreateFrame("Frame", nil, Minimap)
+    frame:SetSize(14, 14)
+    frame:SetFrameLevel(Minimap:GetFrameLevel() + 5)
+
+    frame.icon = frame:CreateTexture(nil, "ARTWORK")
+    frame.icon:SetAllPoints()
+    frame.icon:SetTexture(texture)
+    -- spell icons carry a light border baked into the texture; crop it off (the usual 7% trim)
+    frame.icon:SetTexCoord(0.07, 0.93, 0.07, 0.93)
+
+    frame:Hide()
+    return frame
+end
+
+for i = 1, 3 do
+    AcherusBG_Orbs.icons[i] = CreateMarker(ORB_PRESENCE_ICON[i])
+end
+
+local function HideOrbMarkers()
+    for i = 1, 3 do
+        AcherusBG_Orbs.icons[i]:Hide()
+    end
+end
+
+-- a same team orb carrier is a battlefield raid member: find its unit token by name so the marker can
+-- follow GetPlayerMapPosition (smooth) instead of the 0.25 s server updates
+local function FindUnitByName(name)
+    if not name or name == "" then
+        return nil
+    end
+    if UnitName("player") == name then
+        return "player"
+    end
+    for i = 1, 40 do
+        local unit = "raid" .. i
+        if UnitName(unit) == name then
+            return unit
+        end
+    end
+    for i = 1, 4 do
+        local unit = "party" .. i
+        if UnitName(unit) == name then
+            return unit
+        end
+    end
+    return nil
+end
+
+local orbDriver = CreateFrame("Frame")
+orbDriver:SetScript("OnUpdate", function()
+    local data = AcherusBG_Orbs.data
+    if not data or not AcherusBG_UI.active or (GetTime() - data.time) > 2 then
+        HideOrbMarkers()
+        return
+    end
+
+    -- the player position is known every frame through GetPlayerMapPosition, converted back to world with
+    -- the fixed transform so the anchor moves smoothly (falls back to the server position while invalid)
+    local playerX, playerY = data.px, data.py
+    local mapX, mapY = GetPlayerMapPosition("player")
+    if mapX and not (mapX == 0 and mapY == 0) then
+        playerY = MAP_A + MAP_B * mapX
+        playerX = MAP_C + MAP_D * mapY
+    end
+
+    local zoom = Minimap:GetZoom() or 0
+    local pixelsPerYard = Minimap:GetWidth() / (MINIMAP_WORLD_SPAN[zoom] or 250)
+
+    local rotate = GetCVar("rotateMinimap") ~= "0"
+    local facing = rotate and (GetPlayerFacing() or 0) or 0
+    local sinFacing, cosFacing = math.sin(facing), math.cos(facing)
+
+    -- clamp the markers to the minimap edge (icon half size plus a small margin), so far ones stay on the rim
+    local margin = 9
+    local halfW = Minimap:GetWidth() / 2 - margin
+    local halfH = Minimap:GetHeight() / 2 - margin
+    local isSquare = GetMinimapShape and GetMinimapShape() == "SQUARE"
+
+    local function Place(icon, worldX, worldY)
+        -- the Ebon Hold world map is rotated 90 degrees and mirrored on the minimap:
+        -- minimap X from the world Y, minimap Y from the world X (inverted)
+        local dx = -(worldY - playerY) * pixelsPerYard
+        local dy = (worldX - playerX) * pixelsPerYard
+
+        if rotate then
+            dx, dy = dx * cosFacing - dy * sinFacing, dx * sinFacing + dy * cosFacing
+        end
+
+        local dist = isSquare and math.max(math.abs(dx), math.abs(dy)) or math.sqrt(dx * dx + dy * dy)
+        local maxDist = isSquare and math.min(halfW, halfH) or halfW
+        if dist > maxDist then
+            local factor = maxDist / dist
+            dx, dy = dx * factor, dy * factor
+        end
+
+        icon:ClearAllPoints()
+        icon:SetPoint("CENTER", Minimap, "CENTER", dx, dy)
+        icon:Show()
+    end
+
+    for i = 1, 3 do
+        local orb = data.orbs[i]
+        local icon = AcherusBG_Orbs.icons[i]
+        if orb then
+            -- a same team carrier follows its battlefield raid unit for a smooth position; the others
+            -- (enemy carriers and the forges) use the last server position
+            local orbX, orbY = orb.x, orb.y
+            if orb.unit then
+                local ux, uy = GetPlayerMapPosition(orb.unit)
+                if ux and not (ux == 0 and uy == 0) then
+                    orbY = MAP_A + MAP_B * ux
+                    orbX = MAP_C + MAP_D * uy
+                end
+            end
+
+            Place(icon, orbX, orbY)
+        else
+            icon:Hide()
+        end
+    end
+end)
+orbDriver:Show()
+
+-- Called by the server every 0.25 s with the player position (the anchor) and each orb's position, plus
+-- (for a carrier of the observer's team) its name so the client can follow that unit smoothly.
+function AcherusBG_Orbs.Update(px, py, fx, fy, fName, bx, by, bName, ux, uy, uName)
+    local function Store(x, y, name)
+        return { x = x, y = y, unit = FindUnitByName(name) }
+    end
+
+    AcherusBG_Orbs.data = {
+        time = GetTime(),
+        px = px,
+        py = py,
+        orbs = {
+            Store(fx, fy, fName),
+            Store(bx, by, bName),
+            Store(ux, uy, uName),
+        },
+    }
+end
+
 -- Tell the worldserver the script was applied, so it can log it (and stop pinging this client).
 -- The body is valid Lua: it would stay a harmless no-op if the message were ever echoed back.
 SendAddonMessage('AcherusBG', 'return 2', 'GUILD')

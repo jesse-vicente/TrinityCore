@@ -61,7 +61,7 @@ da porta; o resto (corredor, área externa, outros andares) = fora.
 | `sql/custom/world/2026_10_01_00_world_acherus_orbs.sql` | NPC 990000, textos de gossip 990000/990001, forjas 990001–990003, buff Berserk 990004, parede invisível da preparação 990005 |
 | `sql/custom/characters/2026_10_01_00_characters_acherus_orbs.sql` | tabela `custom_acherus_orbs_return` |
 | `sql/custom/world/2026_10_04_00_world_acherus_orbs_spirit_healer.sql` | linhas de `spell_area` (área 4342) que liberam 2584/22012/44535 no Acherus |
-| `client/acherus_orbs_ui.lua` | Lua de UI enviado ao cliente (relabels do EotS), ver "Relabel de UI no cliente" |
+| `client/acherus_orbs_ui.lua` | Lua de UI enviado ao cliente (relabels do EotS + marcadores das orbs no minimapa) |
 
 Os SQLs são aplicados automaticamente pelo updater do worldserver (`updates_include` já aponta para `sql/custom`).
 **Atenção:** `sql/custom/*/.gitignore` ignora `*.sql`, então eles só entram num commit com `git add -f`.
@@ -168,6 +168,13 @@ Testado em jogo com os comandos `.debug bgui`, que eram um patch local de `cs_de
   enviado antes de terminar de carregar o mundo; por isso o módulo responde o `CMSG_BATTLEFIELD_STATUS` com o status
   fake (active ou queued) e reenvia o active assim que o jogador entra no mundo. Clicar no ícone abre o placar. O nome
   "Eye of the Storm" vem do `BattlemasterList.dbc` do cliente e não pode ser trocado sem patch.
+- **Marcadores das orbs no minimapa:** ícones desenhados por Lua (payload do cliente) parentados ao `Minimap`, um por
+  orb, com o ícone da presença de DK (Frost/Blood/Unholy) recortado via `SetTexCoord` (tira a borda clara embutida na
+  textura). O servidor manda a posição de mundo do jogador e de cada orb (do portador, ou da forja se não portado) a
+  cada 0,25 s pelo canal de addon messages (`AcherusBG_Orbs.Update`). O cliente reconstrói a posição do jogador a cada
+  frame via `GetPlayerMapPosition` (transformação mundo↔mapa **fixa** no Lua, valores do `WorldMapArea.dbc` do cliente)
+  para o movimento ficar suave, segue o unit token dos portadores do mesmo time e converte para o minimapa com o span
+  de zoom (`MinimapSize` do Astrolabe, já ajustado ao Acherus), prendendo os ícones na borda.
 - **Mensagens de orbe:** `CHAT_MSG_RAID_BOSS_EMOTE`, que o cliente mostra em amarelo no centro da tela e também no
   chat. O nome do orbe vai colorido com códigos `|c` (Frost azul, Blood vermelho, Unholy verde).
 - **Pontos:** não há texto de combate nativo para pontos customizados (o "+N Victory Points" do Kotmogu vem de spells

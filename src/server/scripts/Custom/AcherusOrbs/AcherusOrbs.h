@@ -169,6 +169,7 @@ namespace AcherusOrbs
         static constexpr uint32 ReturnRetry = 1 * IN_MILLISECONDS;
         static constexpr uint8 ReturnMaxAttempts = 10;
         static constexpr uint32 ClientPing = 25 * IN_MILLISECONDS;         // client UI script safety probe interval
+        static constexpr uint32 OrbMarker = 250;                          // minimap orb marker refresh interval
     }
 
     namespace OrbPower
@@ -265,6 +266,7 @@ namespace AcherusOrbs
         uint32 TickTimer = 0;
         uint32 ResurrectTimer = 0;
         uint32 PlayerCheckTimer = 0;
+        uint32 OrbMarkerTimer = 0;
         uint32 BattleTime = 0;                                      // time played after the preparation, set when the match ends
         std::array<uint32, PVP_TEAMS_COUNT> Score = { };
         Optional<TeamId> Winner;                                    // TEAM_NEUTRAL = draw
@@ -346,6 +348,7 @@ namespace AcherusOrbs
         void ResurrectDead(Match& match);
         void ScoreTick(Match& match);
         void UpdateCarriers(Match& match, uint32 diff);
+        void SendOrbMarkers(Match& match);
 
         void AddPlayer(Match& match, Player* player);
         void RemovePlayer(Match& match, ObjectGuid guid, RemoveMode mode);

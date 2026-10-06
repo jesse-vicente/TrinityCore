@@ -859,6 +859,13 @@ namespace AcherusOrbs
             case MatchStatus::Ended:
                 break;
         }
+
+        match.OrbMarkerTimer += diff;
+        if (match.OrbMarkerTimer >= Timers::OrbMarker)
+        {
+            match.OrbMarkerTimer = 0;
+            SendOrbMarkers(match);
+        }
     }
 
     void Manager::CheckPlayers(Match& match)
@@ -1077,6 +1084,51 @@ namespace AcherusOrbs
 
             if (Player* player = ObjectAccessor::FindConnectedPlayer(state.Carrier))
                 player->SetObjectScale(GetCarrierScale(state));
+        }
+    }
+
+    // minimap markers are server-driven: one Lua snippet per player every OrbMarker ms, executed by the
+    // client listener like the rest of the payload. Positions are world coordinates, the client converts them.
+    void Manager::SendOrbMarkers(Match& match)
+    {
+        if (!_clientUiEnabled || _clientScript.empty())
+            return;
+
+        for (auto const& entry : match.Players)
+        {
+            Player* player = ObjectAccessor::FindConnectedPlayer(entry.first);
+            if (!player || !player->IsInWorld() || player->GetMapId() != Ids::MapId)
+                continue;
+
+            std::string text = Trinity::StringFormat("AcherusBG_Orbs.Update({:.1f},{:.1f}",
+                player->GetPositionX(), player->GetPositionY());
+
+            for (uint8 i = 0; i < MAX_ORBS; ++i)
+            {
+                OrbState const& state = match.Orbs[i];
+
+                std::string carrierName;
+                float x = OrbTemplates[i].ForgePosition.GetPositionX();
+                float y = OrbTemplates[i].ForgePosition.GetPositionY();
+
+                if (Player* carrier = ObjectAccessor::FindConnectedPlayer(state.Carrier))
+                {
+                    auto itr = match.Players.find(state.Carrier);
+
+                    // a carrier of the observer's team is a battlefield raid member: send the name so
+                    // the client can follow that unit and move the marker smoothly
+                    if (itr != match.Players.end() && itr->second.Team == entry.second.Team)
+                        carrierName = carrier->GetName();
+
+                    x = carrier->GetPositionX();
+                    y = carrier->GetPositionY();
+                }
+
+                text += Trinity::StringFormat(",{:.1f},{:.1f},'{}'", x, y, carrierName);
+            }
+
+            text += ")";
+            SendAddonMessage(player, text);
         }
     }
 
