@@ -41,10 +41,10 @@ O -5% de absorção recebida do Orb of Power não foi implementado: o 3.3.5 não
 | Forja C, **Blood** | 2427.28, -5544.45, 420.86 |
 | Porta para a área do Lich King | 2410.68, -5626.74, 420.66 |
 | Spawn Aliança / Horda | 2447.56, -5656.40 / 2397.17, -5581.70 (z 420.65) |
-| Respawn Aliança / Horda (pontas da plataforma externa) | 2345.44, -5696.87 / 2321.40, -5661.22 (z 426.03) |
+| Respawn Aliança / Horda (andar de cima) | 2438.10, -5707.64 / 2345.79, -5571.24 (z 444.6), virados para o salão |
 
-Os spawns e respawns são simétricos em relação ao eixo porta → forja B: 47.9 jardas até o orbe lateral, 114.2 até o
-Unholy e 97.05 da ponta até a porta, para os dois times.
+Os spawns e respawns são simétricos em relação ao eixo porta → forja B: do spawn, 47.9 jardas até o orbe lateral e
+114.2 até o Unholy; do respawn, 85.4 até a porta e ~163.7 até o Unholy, para os dois times.
 
 Zonas de pontuação (`GetPointsForPosition`): poço = raio 25 e z < 418; plataforma = raio 62 e até 56 jardas na direção
 da porta; o resto (corredor, área externa, outros andares) = fora.
@@ -58,7 +58,7 @@ da porta; o resto (corredor, área externa, outros andares) = fora.
 | `AcherusOrbs.h` | constantes (IDs, posições, timers, pontuação) e as classes `Manager`, `Match`, `MatchPlayer`, `OrbState` |
 | `AcherusOrbs.cpp` | toda a lógica: fila, partidas, phases, orbes, mortes, placar, logout/login |
 | `AcherusOrbsScripts.cpp` | NPC da fila, forja clicável, `PlayerScript`, `UnitScript`, `WorldScript`, comandos `.acherus` |
-| `sql/custom/world/2026_10_01_00_world_acherus_orbs.sql` | NPC 990000, textos de gossip 990000/990001, forjas 990001–990003, buff Berserk 990004, parede invisível da preparação 990005 |
+| `sql/custom/world/2026_10_01_00_world_acherus_orbs.sql` | NPC 990000, textos de gossip 990000/990001, forjas 990001–990003, buff Berserk 990004, parede invisível da preparação 990005, poça de sangue da forja Blood 990006 |
 | `sql/custom/characters/2026_10_01_00_characters_acherus_orbs.sql` | tabela `custom_acherus_orbs_return` |
 | `sql/custom/world/2026_10_04_00_world_acherus_orbs_spirit_healer.sql` | linhas de `spell_area` (área 4342) que liberam 2584/22012/44535 no Acherus |
 | `client/acherus_orbs_ui.lua` | Lua de UI enviado ao cliente (relabels do EotS + marcadores das orbs no minimapa) |
@@ -123,12 +123,12 @@ convidado pelo líder). O módulo guarda só o GUID do grupo, porque o `Group` p
   DK, então há **até 23 partidas simultâneas**.
 - Na phase da partida, os NPCs e GOs originais de Acherus somem, inclusive as forjas. Por isso cada partida spawna os
   seus próprios objetos: clones clicáveis das forjas (type 10, display 8175, size 2.03), bunnies invisíveis
-  (`23837`) com o feixe de cada forja, Spirit Guides (`13116`/`13117`), o buff Berserk (990004) e, na preparação, o
-  domo (NPC `28306`) e as paredes invisíveis (990005) de cada spawn.
+  (`23837`) e GOs de cenário com os visuais de cada forja, Spirit Guides (`13116`/`13117`), o buff Berserk (990004)
+  e, na preparação, o domo (NPC `28306`) e as paredes invisíveis (990005) de cada spawn.
 - A phase de cada participante é reaplicada a cada segundo. Isso cobre auras de phase de quest, que podem ser
   reaplicadas por troca de área.
 - Ao sair, a phase é recalculada como em `AuraEffect::HandlePhase`.
-- As forjas, os bunnies dos feixes e os domos da preparação são vistos de longe: cada um recebe
+- As forjas, os bunnies e GOs dos visuais das forjas e os domos da preparação são vistos de longe: cada um recebe
   `SetVisibilityDistanceOverride(VisibilityDistanceType::Large)` (200 jardas; o mapa usa 100). O ajuste vale só para
   esses objetos e não mexe em `Visibility.Distance.*` nem em nada fora da partida.
 
@@ -207,8 +207,8 @@ Testado em jogo com os comandos `.debug bgui`, que eram um patch local de `cs_de
    30 s. As forjas já ficam acesas, mas os orbes só podem ser pegos quando a batalha começa. Os anjos ficam dentro do
    spawn, como no Warsong Gulch. Quem morre dá Release e ressuscita ali, na onda.
 5. **Partida (25 min):** os anjos do spawn, o domo e as paredes somem, e quem ainda estiver como fantasma ressuscita
-   no spawn. Clicar numa forja dá o orbe: efeito da presença de DK no portador, escala, o feixe da forja apaga, o
-   jogador é desmontado e perde stealth/invisibilidade.
+   no spawn. Clicar numa forja dá o orbe: efeito da presença de DK no portador, aura do orbe, escala, os visuais da
+   forja apagam, o jogador é desmontado e perde stealth/invisibilidade.
    O buff Berserk aparece no lugar do portal para o andar de cima (2383.65, -5645.20, 420.77, a 0,2 jarda do eixo porta →
    forja Unholy, então a mesma distância para os dois times), virado para o poço. É o GO 990004, cópia do 179905 das
    BGs com trap tipo 1: o GO lança a spell e se desativa. Um GO novo também começa desativado, então o script só o
@@ -232,22 +232,56 @@ santuário do mapa 609 é desligado e a flag PvP é forçada.
 
 ## Visual
 
-| Orbe | Feixe na forja (aura) | Ao pegar (visual kit, uma vez) | Aura no portador |
+### Forjas
+
+Enquanto o orbe está pronto (inclusive na preparação), cada forja mostra auras em bunnies invisíveis (`23837`) e GOs
+de cenário; tudo some quando o orbe é pego e volta quando ele retorna (`SetForgeVisuals`). Os valores ficam em
+`OrbTemplates` (`AcherusOrbs.cpp`) e as constantes em `Spells`/`Ids` (`AcherusOrbs.h`).
+
+| Forja | Bunny das auras (`ForgeAuraScale`) | Auras com bunny próprio (`ForgeScaledAuras`) | GOs (`ForgeObjects`) |
 |---|---|---|---|
-| Frost | 62893 Blue Skybeam | 10288, da Frost Presence (48263) | 55840 Blue Wyrmrest Warden Beam |
-| Blood | 62894 Red Skybeam | 10283, da Blood Presence (48266) | 55824 Red Wyrmrest Warden Beam |
-| Unholy | 62895 Green Skybeam + 60426 Ghost State | 10297, da Unholy Presence (48265) | 55838 Green Wyrmrest Warden Beam |
+| Frost | 3x: 31954 Spirit Particles, super big | 32840 Beam (Blue) 2x; 58837 Icebound Fortitude 8x | — |
+| Blood | 3x: 31951 Spirit Particles (red, super big); 58361 The Might of Mograine | 32839 Beam (Red) 1.8x | 990006 Pool of Blood 3x |
+| Unholy | 5x: 61894 Spirit Particles (green - Base); 43167 Spirit Particles (green) | 63319 Saronite Animus Formation Visual 1x; 60426 Ghost State 1x | 191206 `SC_CastingCircle_01` 1.4x |
 
-Todas as auras são dummy (sem efeito de stat) e ficam com duração infinita. As presenças não são aplicadas: têm efeito
-de stat (armadura, ameaça, dano, haste) e trocariam a presença de um DK. O script só toca o efeito delas
-(`SendPlaySpellVisualKit`, o `ImpactKit` do `SpellVisual.dbc`) uma vez ao pegar o orbe; esses kits não têm versão
-permanente (`StateKit`) e trazem som, então repeti-los tocaria o som o tempo todo. Os modificadores de dano e cura
-ficam no `UnitScript` (`ModifyMeleeDamage`, `ModifySpellDamageTaken`, `ModifyPeriodicDamageAurasTick`, `OnHeal`), e
-`OnDamage`/`OnHeal` também alimentam as estatísticas do placar final.
+- **Escala:** o tamanho de um efeito de aura vem do modelo e da escala no `SpellVisualEffectName.dbc` do cliente; pelo
+  servidor, só a escala da unidade que carrega a aura muda o tamanho. Por isso cada forja tem um bunny com a escala das
+  suas auras e, para as que precisam de outro tamanho, um bunny por aura (`ForgeScaledAuras`). O beam vermelho é mais
+  largo que o azul no próprio modelo (os dois efeitos têm escala 1 no DBC), então fica em 1.8 contra 2.
+- **Orientação:** os bunnies nascem virados para o poço (`Positions::Center`), já que os efeitos são desenhados
+  relativos à frente da unidade.
+- **Auras não dummy:** 58361 (efeitos de dano, cura e vida máxima) é usada no lugar da Hysteria (49016/55213/55975),
+  que tem o mesmo modelo (`DeathKnight_Hysteria.mdx`), mas causa dano periódico em % da vida, que mataria o bunny, e
+  tem som. Os efeitos da 58361 não fazem nada num bunny que nunca luta.
+- **GOs:** são criados com `GO_FLAG_NOT_SELECTABLE`, sem destaque nem tooltip no mouseover. O 990006 é uma cópia tipo 5,
+  sem nome, do 194479 (`tradeskill_fishschool_red`): o original é um fishing hole (tipo 25), que o cliente destaca
+  mesmo com a flag. A poça usa escala 3 porque, no tamanho do template (0.75), fica escondida sob a forja.
+- **Pesquisa:** os efeitos permanentes de uma aura estão no `StateKit` (campo 4 do `SpellVisual.dbc`), nos campos de
+  modelo do `SpellVisualKit.dbc` e também no `SpellVisualKitModelAttach.dbc` (é por ali que a 72915 prende o
+  `sc_spirits_02`). O som do kit é o campo 15 do `SpellVisualKit.dbc`.
+- **Descartados:** os skybeams 62893/62894/62895 (altos demais), 72915 Arthas Teleporter Ceremony, 54717 e 75498
+  (neve), 52574/52679 (radiation), 180713 Light of Elune, 190564 Acherus Teleport Rune.
 
-A forja Unholy tem, além do feixe verde, a aura 60426 Ghost State (`Spells::ForgeAuraUnholy`), permanente no bunny
-invisível que existe sobre cada forja (o mesmo que segura os feixes) enquanto o orbe está pronto. Um círculo do Scourge
-(`SC_CastingCircle_01`, GO 191206) foi testado no lugar do feixe verde e descartado.
+### Portador
+
+| Orbe | Ao pegar (visual kit, uma vez) | Aura enquanto carrega |
+|---|---|---|
+| Frost | 10288, da Frost Presence (48263) | 33344 Blue Banish State |
+| Blood | 10283, da Blood Presence (48266) | 33343 Red Banish State |
+| Unholy | 10297, da Unholy Presence (48265) | 32567 Green Banish State |
+
+As Banish State são dummy e têm `SPELL_ATTR0_HIDDEN_CLIENTSIDE`, então não aparecem na barra de buffs. As Wyrmrest
+Warden Beam usadas antes (55840/55824/55838) mostravam o ícone e tinham som de fogo na vermelha (`HellFireLoop`). A
+vermelha e a verde não têm som; a azul toca `DemonicSacrifice`, porque nenhuma Blue Banish State é silenciosa. O
+cliente só esconde o ícone pelo atributo do próprio DBC, e o visual só aparece se a aura estiver na lista de auras do
+cliente, então não há como esconder o ícone de uma aura sem esse atributo. Por isso os portais (33338/33339/33340)
+foram descartados: não existe versão oculta da vermelha (a 30396 só existe no `spell_dbc` do servidor).
+
+As presenças não são aplicadas: têm efeito de stat (armadura, ameaça, dano, haste) e trocariam a presença de um DK. O
+script só toca o efeito delas (`SendPlaySpellVisualKit`, o `ImpactKit` do `SpellVisual.dbc`) uma vez ao pegar o orbe;
+esses kits não têm versão permanente (`StateKit`) e trazem som, então repeti-los tocaria o som o tempo todo. Os
+modificadores de dano e cura ficam no `UnitScript` (`ModifyMeleeDamage`, `ModifySpellDamageTaken`,
+`ModifyPeriodicDamageAurasTick`, `OnHeal`), e `OnDamage`/`OnHeal` também alimentam as estatísticas do placar final.
 
 ### Domo da preparação
 
@@ -400,16 +434,17 @@ Validado em jogo:
 - anjos e ressurreição nas pontas;
 - placar final e saída;
 - preparação estilo Warsong (anjo no spawn + Release + onda);
-- contagem por notificação no lugar do frame nativo;
 - reconexão em até 300 s e orbe solto antes do save;
 - retorno pós-queda pelo update do mundo, com confirmação;
 - exigência de nível 80;
 - timers do placar final via battlefield status ("Time Elapsed" e "closing in");
 - coluna Flag Captures com os pontos de cada jogador;
 - jogadores parados durante o placar final e teleporte de saída no tempo certo;
-- auras do portador (efeito da presença uma vez, depois Wyrmrest) e a Ghost State na forja Unholy;
+- efeito da presença uma vez ao pegar o orbe;
 - domo da preparação com paredes invisíveis e limitador de reserva;
-- forjas acesas desde a preparação.
+- forjas acesas desde a preparação;
+- visuais das forjas (auras, beams, escalas por bunny, bunnies virados para o poço, poça e círculo);
+- respawns no andar de cima.
 
 Implementado e compilado, **ainda não testado em jogo**:
 - entrada em partida em andamento (vagas por facção);
@@ -420,8 +455,9 @@ Implementado e compilado, **ainda não testado em jogo**:
 - botão de BG no minimapa na fila, na preparação e durante a partida (via `OnRequestBattlefieldStatus`), com o "Leave Queue" da janela PvP saindo da fila (`OnBattlefieldPort`), e placar ao vivo sob demanda (`OnPVPLogDataRequest`) com a coluna de pontos por jogador atualizando;
 - regra de fila exclusiva: quem já está em fila de BG/arena real não entra na fila do Acherus (`InBattlegroundQueue`);
 - relabel de UI no cliente via Warden (`OnAddonMessage` + `acherus_orbs_ui.lua`, sem check dedicado em `warden_checks`), validado em jogo (exige `Warden.Enabled=1`);
-- sons, mensagens de orbe no centro, Berserk e vitória validados; falta validar a cor amarela de "+N points" e da
-  contagem do anjo (`SendAreaTriggerMessage`), o Berserk virado para o poço e o 51721 para todos.
+- sons, mensagens de orbe no centro, Berserk e vitória validados; falta validar a cor amarela de "+N points"
+  (`SendAreaTriggerMessage`), o Berserk virado para o poço e o 51721 para todos;
+- Banish State no portador sem ícone na barra de buffs, e a poça 990006 sem tooltip nem destaque no mouseover.
 
 ## Pendências
 
@@ -429,9 +465,11 @@ Implementado e compilado, **ainda não testado em jogo**:
   dela, sem passar do limite do time.
 - Testar o raid: criado com o time, status PvP dos membros, volta ao grupo original na saída e no fim, religação após
   logout, /leave e convite de alguém de fora corrigidos em até 1 s.
-- Testar "+N points" e a contagem do anjo em amarelo, o Berserk virado para o poço e a velocidade de 51721 para todos
-  (e que ela some de todos ao sair, DKs inclusive).
-- Confirmar a visão de longe das forjas e dos feixes (200 jardas).
+- Testar "+N points" em amarelo, o Berserk virado para o poço e a velocidade de 51721 para todos (e que ela some de
+  todos ao sair, DKs inclusive).
+- Confirmar a visão de longe das forjas e dos seus visuais (200 jardas).
+- Deixar um fantasma no anjo por várias ondas com o popup nativo `AREA_SPIRIT_HEAL`: antes, o timer nativo fora de BG
+  fazia o cliente pedir o tempo em loop até desconectar.
 - Decidir se as forjas acendendo tocam som (proposta: 8232, `BG_WS_SOUND_FLAGS_RESPAWNED`).
 - NPC de fila para a Horda (hoje só em Old Town). Eventual entrada pelo "Random Battleground" da UI.
 - Adicionar as chaves de configuração ao `worldserver.conf.dist` ao integrar no servidor de destino (no módulo, sem elas valem os padrões).

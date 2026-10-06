@@ -63,6 +63,10 @@ namespace AcherusOrbs
         static constexpr uint32 GoUnholyForge = 990003;
         static constexpr uint32 GoBerserkBuff = 990004;              // Berserk Buff (179905) that despawns when used
         static constexpr uint32 GoPreparationWall = 990005;          // invisible PvP collision wall (display of 180322), rings the preparation domes
+        static constexpr uint32 GoPoolOfBlood = 990006;              // generic copy of the Pool of Blood fishing hole (194479), on the Blood forge
+        static constexpr float PoolOfBloodScale = 3.0f;              // small puddle, hidden under the forge at its template size (0.75)
+        static constexpr uint32 GoScourgeCircle = 191206;            // SC_CastingCircle_01, on the Unholy forge
+        static constexpr float ScourgeCircleScale = 1.4f;
     }
 
     namespace Spells
@@ -77,15 +81,24 @@ namespace AcherusOrbs
         static constexpr uint32 SpiritHealMana = 44535;              // Spirit Heal, on the player after the resurrection
         static constexpr uint32 PreparationDome = 50461;             // Anti-Magic Zone: only its channel kit is used, the aura is never applied
 
-        static constexpr uint32 ForgeBeamFrost = 62893;              // Blue Skybeam
-        static constexpr uint32 ForgeBeamBlood = 62894;              // Red Skybeam
-        static constexpr uint32 ForgeBeamUnholy = 62895;             // Green Skybeam
-        static constexpr uint32 ForgeAuraUnholy = 60426;             // Ghost State, on the Unholy forge trigger together with its beam
+        // forge auras, on the forge triggers while the orb is ready; visual only (dummy, except 58361, see README)
+        static constexpr uint32 ForgeSpiritsFrost = 31954;           // Spirit Particles, super big (DND): Spells\Ghost_state.mdx
+        static constexpr uint32 ForgeBeamFrost = 32840;              // Beam (Blue): MoonBeamBlue_Impact_Base.mdx
+        static constexpr uint32 ForgeBeamBlood = 32839;              // Beam (Red): MoonBeamRed_Impact_Base.mdx
+        static constexpr uint32 ForgeIceboundFrost = 58837;          // Icebound Fortitude: DeathKnight_IceboundFortitude.mdx
+        static constexpr uint32 ForgeSpiritsBlood = 31951;           // Spirit Particles (red, super big) (DND): spells\redghost_state.mdx
+        static constexpr uint32 ForgeHysteriaBlood = 58361;          // The Might of Mograine: DeathKnight_Hysteria.mdx without the Hysteria sound; its effects (damage, healing, max health) do nothing on the trigger
+        static constexpr uint32 ForgeSpiritsUnholyBase = 61894;      // Spirit Particles (green - Base): Spells\GreenGhost_state.mdx
+        static constexpr uint32 ForgeSpiritsUnholy = 43167;          // Spirit Particles (green): Spells\GreenGhost_state.mdx
+        static constexpr uint32 ForgePlagueUnholy = 63319;           // Saronite Animus Formation Visual: DeathKnight_PlagueStrikeState.mdx, already large at scale 1
+        static constexpr uint32 ForgeGhostStateUnholy = 60426;       // Ghost State: sc_spirits_01.mdx
 
         // permanent carrier auras, all dummy (no stat effect)
-        static constexpr uint32 CarrierAuraFrost = 55840;            // Blue Wyrmrest Warden Beam (banish_chest_blue)
-        static constexpr uint32 CarrierAuraBlood = 55824;            // Red Wyrmrest Warden Beam (bloodbolt_chest)
-        static constexpr uint32 CarrierAuraUnholy = 55838;           // Green Wyrmrest Warden Beam (Banish_Chest)
+        // Banish States are hidden from the aura bar (SPELL_ATTR0_HIDDEN_CLIENTSIDE); red and green are silent, the blue one
+        // has no silent version and plays DemonicSacrifice
+        static constexpr uint32 CarrierAuraFrost = 33344;            // Blue Banish State (banish_chest_blue)
+        static constexpr uint32 CarrierAuraBlood = 33343;            // Red Banish State (bloodbolt_chest)
+        static constexpr uint32 CarrierAuraUnholy = 32567;           // Green Banish State (Banish_Chest)
 
     }
 
@@ -192,6 +205,18 @@ namespace AcherusOrbs
         MAX_ORBS
     };
 
+    struct ForgeScaledAura
+    {
+        uint32 Spell = 0;                                           // 0 = none
+        float Scale = 1.0f;                                         // scale of its own trigger
+    };
+
+    struct ForgeObjectTemplate
+    {
+        uint32 Entry = 0;                                           // 0 = none
+        float Scale = 0.0f;                                         // 0 = size of the gameobject template
+    };
+
     struct OrbTemplate
     {
         char const* Name;
@@ -199,10 +224,12 @@ namespace AcherusOrbs
         uint32 ForgeEntry;
         Position ForgePosition;
         QuaternionData ForgeRotation;
-        uint32 ForgeBeam;
-        uint32 ForgeAura;                                           // extra permanent aura of the forge trigger while the orb is ready (0 = none)
+        float ForgeAuraScale;                                       // scale of the forge trigger, the forge auras are drawn at it
+        std::array<uint32, 5> ForgeAuras;                          // permanent auras of the forge trigger while the orb is ready (0 = none)
+        std::array<ForgeObjectTemplate, 3> ForgeObjects;            // gameobjects spawned on the forge while the orb is ready
+        std::array<ForgeScaledAura, 2> ForgeScaledAuras;            // auras on their own trigger, to size them apart from the others
         uint32 CarrierVisualKit;
-        uint32 CarrierAura;
+        std::array<uint32, 2> CarrierAuras;                         // permanent auras of the carrier (0 = none)
     };
 
     extern std::array<OrbTemplate, MAX_ORBS> const OrbTemplates;
@@ -229,6 +256,8 @@ namespace AcherusOrbs
     {
         ObjectGuid Forge;
         ObjectGuid Trigger;
+        std::array<ObjectGuid, 2> ScaledAuraTriggers;
+        std::array<ObjectGuid, 3> Objects;
         ObjectGuid Carrier;
         uint32 Stacks = 0;
         uint32 StackTimer = 0;
@@ -365,7 +394,9 @@ namespace AcherusOrbs
         static Position const& GetGraveyard(Match const& match, TeamId team);
         void SpawnBerserkBuff(Match& match, Map* map);
         void UpdateBerserkBuff(Match& match, uint32 diff);
-        void SetForgeBeam(Match& match, OrbType orb, bool on);
+        void SetForgeVisuals(Match& match, OrbType orb, bool on);
+        static ObjectGuid SpawnForgeObject(Match const& match, Map* map, OrbTemplate const& orbTemplate, ForgeObjectTemplate const& objectTemplate);
+        static ObjectGuid SummonForgeTrigger(Match const& match, Map* map, OrbTemplate const& orbTemplate, float scale);
         void PickUpOrb(Match& match, OrbType orb, Player* player);
         void DropOrb(Match& match, OrbType orb, bool announce);
         Optional<OrbType> GetCarriedOrb(Match const& match, ObjectGuid guid) const;

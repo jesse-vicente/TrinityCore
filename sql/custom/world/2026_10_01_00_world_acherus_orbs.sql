@@ -30,3 +30,12 @@ INSERT INTO `gameobject_template` (`entry`, `type`, `displayId`, `name`, `IconNa
 DELETE FROM `gameobject_template` WHERE `entry` = 990005;
 INSERT INTO `gameobject_template` (`entry`, `type`, `displayId`, `name`, `IconName`, `castBarCaption`, `unk1`, `size`) VALUES
 (990005, 5, 6391, 'Preparation Wall', '', '', '', 0.8);
+
+-- Pool of Blood scenery on the Blood forge: display of 194479 (tradeskill_fishschool_red), which is a fishing hole and
+-- shows a tooltip and a mouseover highlight. As a generic object without a name it is scenery only.
+DELETE FROM `gameobject_template` WHERE `entry` = 990006;
+INSERT INTO `gameobject_template` (`entry`, `type`, `displayId`, `name`, `IconName`, `castBarCaption`, `unk1`, `size`) VALUES
+(990006, 5, 8610, '', '', '', '', 0.75);
+DELETE FROM `gameobject_template_addon` WHERE `entry` = 990006;
+INSERT INTO `gameobject_template_addon` (`entry`, `faction`, `flags`) VALUES
+(990006, 0, 16); -- GO_FLAG_NOT_SELECTABLE

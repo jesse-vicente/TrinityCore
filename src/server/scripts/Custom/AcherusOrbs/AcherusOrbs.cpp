@@ -49,9 +49,9 @@ namespace AcherusOrbs
 {
     std::array<OrbTemplate, MAX_ORBS> const OrbTemplates =
     {{
-        { "Frost",  "ff69ccf0", Ids::GoFrostForge,  { 2493.37f, -5642.43f, 420.863f,  2.16421f  }, QuaternionData(0.0f, 0.0f,  0.882948f, 0.469471f), Spells::ForgeBeamFrost,  0, VisualKits::CarrierFrost,  Spells::CarrierAuraFrost  },
-        { "Blood",  "ffff3030", Ids::GoBloodForge,  { 2427.28f, -5544.45f, 420.863f, -0.983229f }, QuaternionData(0.0f, 0.0f, -0.47205f,  0.881572f), Spells::ForgeBeamBlood,  0, VisualKits::CarrierBlood,  Spells::CarrierAuraBlood  },
-        { "Unholy", "ff40ff40", Ids::GoUnholyForge, { 2509.31f, -5560.39f, 420.863f, -2.55402f  }, QuaternionData(0.0f, 0.0f, -0.957154f, 0.289578f), Spells::ForgeBeamUnholy, Spells::ForgeAuraUnholy, VisualKits::CarrierUnholy, Spells::CarrierAuraUnholy }
+        { "Frost",  "ff69ccf0", Ids::GoFrostForge,  { 2493.37f, -5642.43f, 420.863f,  2.16421f  }, QuaternionData(0.0f, 0.0f,  0.882948f, 0.469471f), 3.0f, { Spells::ForgeSpiritsFrost, 0, 0, 0, 0 }, {}, {{ { Spells::ForgeBeamFrost, 2.0f }, { Spells::ForgeIceboundFrost, 8.0f } }}, VisualKits::CarrierFrost,  { Spells::CarrierAuraFrost } },
+        { "Blood",  "ffff3030", Ids::GoBloodForge,  { 2427.28f, -5544.45f, 420.863f, -0.983229f }, QuaternionData(0.0f, 0.0f, -0.47205f,  0.881572f), 3.0f, { Spells::ForgeSpiritsBlood, Spells::ForgeHysteriaBlood, 0, 0, 0 }, {{ { Ids::GoPoolOfBlood, Ids::PoolOfBloodScale } }}, {{ { Spells::ForgeBeamBlood, 1.8f } }}, VisualKits::CarrierBlood,  { Spells::CarrierAuraBlood } },
+        { "Unholy", "ff40ff40", Ids::GoUnholyForge, { 2509.31f, -5560.39f, 420.863f, -2.55402f  }, QuaternionData(0.0f, 0.0f, -0.957154f, 0.289578f), 5.0f, { Spells::ForgeSpiritsUnholyBase, Spells::ForgeSpiritsUnholy, 0, 0, 0 }, {{ { Ids::GoScourgeCircle, Ids::ScourgeCircleScale } }}, {{ { Spells::ForgePlagueUnholy, 1.0f }, { Spells::ForgeGhostStateUnholy, 1.0f } }}, VisualKits::CarrierUnholy, { Spells::CarrierAuraUnholy } }
     }};
 
     namespace
@@ -66,7 +66,7 @@ namespace AcherusOrbs
         constexpr uint8 RequiredLevel = 80;
         constexpr float SpiritGuideOffset = 3.0f;                   // spirit guide stands in front of the respawn point
         constexpr float SpiritHealerRange = 17.0f;                  // client AREA_SPIRIT_HEALER_IN_RANGE radius, measured in game
-        // forges and their beams are seen from anywhere in the hall and outside it; only these objects, not the map setting
+        // forges and their visuals are seen from anywhere in the hall and outside it; only these objects, not the map setting
         constexpr VisibilityDistanceType ForgeVisibility = VisibilityDistanceType::Large;
 
         // client-side UI relabel: the Warden bootstrap listener and the pushed payload share this prefix
@@ -1191,7 +1191,7 @@ namespace AcherusOrbs
 
         // the forges already glow during the preparation, the orbs can only be taken once the battle begins
         for (uint8 orb = 0; orb < MAX_ORBS; ++orb)
-            SetForgeBeam(match, OrbType(orb), true);
+            SetForgeVisuals(match, OrbType(orb), true);
 
         Announce(match, CHAT_MSG_BG_SYSTEM_NEUTRAL, "The battle for Acherus begins in 2 minutes.");
     }
@@ -1224,7 +1224,7 @@ namespace AcherusOrbs
         }
 
         for (uint8 orb = 0; orb < MAX_ORBS; ++orb)
-            SetForgeBeam(match, OrbType(orb), true);
+            SetForgeVisuals(match, OrbType(orb), true);
 
         if (Map* map = sMapMgr->FindMap(Ids::MapId, 0))
             SpawnBerserkBuff(match, map);
@@ -1250,7 +1250,7 @@ namespace AcherusOrbs
         for (uint8 orb = 0; orb < MAX_ORBS; ++orb)
         {
             DropOrb(match, OrbType(orb), false);
-            SetForgeBeam(match, OrbType(orb), false);
+            SetForgeVisuals(match, OrbType(orb), false);
         }
 
         for (auto& [guid, matchPlayer] : match.Players)
@@ -1455,13 +1455,10 @@ namespace AcherusOrbs
                     delete forge;
             }
 
-            if (TempSummon* trigger = map->SummonCreature(Ids::NpcBeamTrigger, orbTemplate.ForgePosition))
-            {
-                trigger->SetPhaseMask(match.PhaseMask, true);
-                trigger->setActive(true);
-                trigger->SetVisibilityDistanceOverride(ForgeVisibility);
-                state.Trigger = trigger->GetGUID();
-            }
+            state.Trigger = SummonForgeTrigger(match, map, orbTemplate, orbTemplate.ForgeAuraScale);
+            for (std::size_t i = 0; i < orbTemplate.ForgeScaledAuras.size(); ++i)
+                if (orbTemplate.ForgeScaledAuras[i].Spell)
+                    state.ScaledAuraTriggers[i] = SummonForgeTrigger(match, map, orbTemplate, orbTemplate.ForgeScaledAuras[i].Scale);
         }
 
         // starting area spirit guides only exist during the preparation, like the ones inside the Warsong Gulch bases
@@ -1634,7 +1631,16 @@ namespace AcherusOrbs
                 forge->Delete();
             }
 
+            for (ObjectGuid& guid : state.Objects)
+            {
+                if (GameObject* object = map->GetGameObject(guid))
+                    object->Delete();
+                guid.Clear();
+            }
+
             DespawnCreature(map, state.Trigger);
+            for (ObjectGuid& guid : state.ScaledAuraTriggers)
+                DespawnCreature(map, guid);
             state.Forge.Clear();
         }
 
@@ -1719,7 +1725,7 @@ namespace AcherusOrbs
         match.BerserkBuffTimer = Timers::BuffRespawn;
     }
 
-    void Manager::SetForgeBeam(Match& match, OrbType orb, bool on)
+    void Manager::SetForgeVisuals(Match& match, OrbType orb, bool on)
     {
         Map* map = sMapMgr->FindMap(Ids::MapId, 0);
         if (!map)
@@ -1728,14 +1734,27 @@ namespace AcherusOrbs
         OrbTemplate const& orbTemplate = OrbTemplates[orb];
         OrbState& state = match.Orbs[orb];
 
-        Creature* trigger = map->GetCreature(state.Trigger);
-        if (!trigger)
-            return;
-
-        for (uint32 spellId : { orbTemplate.ForgeBeam, orbTemplate.ForgeAura })
+        for (std::size_t i = 0; i < orbTemplate.ForgeObjects.size(); ++i)
         {
-            if (!spellId)
+            ForgeObjectTemplate const& objectTemplate = orbTemplate.ForgeObjects[i];
+            if (!objectTemplate.Entry)
                 continue;
+
+            ObjectGuid& guid = state.Objects[i];
+            if (!on)
+            {
+                if (GameObject* object = map->GetGameObject(guid))
+                    object->Delete();
+                guid.Clear();
+            }
+            else if (!map->GetGameObject(guid))
+                guid = SpawnForgeObject(match, map, orbTemplate, objectTemplate);
+        }
+
+        auto setAura = [on](Creature* trigger, uint32 spellId)
+        {
+            if (!trigger || !spellId)
+                return;
 
             if (!on)
                 trigger->RemoveAurasDueToSpell(spellId);
@@ -1745,7 +1764,59 @@ namespace AcherusOrbs
                     aura->SetMaxDuration(-1);
                     aura->SetDuration(-1);
                 }
+        };
+
+        Creature* trigger = map->GetCreature(state.Trigger);
+        for (uint32 spellId : orbTemplate.ForgeAuras)
+            setAura(trigger, spellId);
+
+        for (std::size_t i = 0; i < orbTemplate.ForgeScaledAuras.size(); ++i)
+            setAura(map->GetCreature(state.ScaledAuraTriggers[i]), orbTemplate.ForgeScaledAuras[i].Spell);
+    }
+
+    // invisible bunny on the forge carrying its auras, facing the pit since the auras are drawn relative to its facing
+    ObjectGuid Manager::SummonForgeTrigger(Match const& match, Map* map, OrbTemplate const& orbTemplate, float scale)
+    {
+        Position position = orbTemplate.ForgePosition;
+        position.SetOrientation(position.GetAbsoluteAngle(Positions::Center));
+
+        TempSummon* trigger = map->SummonCreature(Ids::NpcBeamTrigger, position);
+        if (!trigger)
+            return ObjectGuid::Empty;
+
+        trigger->SetPhaseMask(match.PhaseMask, true);
+        trigger->setActive(true);
+        trigger->SetVisibilityDistanceOverride(ForgeVisibility);
+        trigger->SetObjectScale(scale);
+        return trigger->GetGUID();
+    }
+
+    ObjectGuid Manager::SpawnForgeObject(Match const& match, Map* map, OrbTemplate const& orbTemplate, ForgeObjectTemplate const& objectTemplate)
+    {
+        GameObject* object = new GameObject();
+        if (!object->Create(map->GenerateLowGuid<HighGuid::GameObject>(), objectTemplate.Entry, map, match.PhaseMask, orbTemplate.ForgePosition,
+            QuaternionData::fromEulerAnglesZYX(orbTemplate.ForgePosition.GetOrientation(), 0.0f, 0.0f), 255, GO_STATE_READY))
+        {
+            TC_LOG_ERROR("scripts", "AcherusOrbs: cannot create forge gameobject {} for match {}", objectTemplate.Entry, match.Id);
+            delete object;
+            return ObjectGuid::Empty;
         }
+
+        if (objectTemplate.Scale > 0.0f)
+            object->SetObjectScale(objectTemplate.Scale);
+
+        // scenery only: no mouseover highlight
+        object->SetFlag(GO_FLAG_NOT_SELECTABLE);
+
+        object->setActive(true);
+        object->SetVisibilityDistanceOverride(ForgeVisibility);
+        if (!map->AddToMap(object))
+        {
+            delete object;
+            return ObjectGuid::Empty;
+        }
+
+        return object->GetGUID();
     }
 
     void Manager::OnForgeUse(Player* player, GameObject* forge)
@@ -1795,9 +1866,10 @@ namespace AcherusOrbs
 
         player->SetObjectScale(GetCarrierScale(state));
         player->SendPlaySpellVisualKit(orbTemplate.CarrierVisualKit, 0);
-        ApplyPermanentAura(player, orbTemplate.CarrierAura);
+        for (uint32 spellId : orbTemplate.CarrierAuras)
+            ApplyPermanentAura(player, spellId);
 
-        SetForgeBeam(match, orb, false);
+        SetForgeVisuals(match, orb, false);
         UpdateWorldStates(match);
 
         Announce(match, CHAT_MSG_RAID_BOSS_EMOTE, Trinity::StringFormat("{} has taken the |c{}{}|r orb!", player->GetName(), orbTemplate.Color, orbTemplate.Name));
@@ -1813,8 +1885,9 @@ namespace AcherusOrbs
 
         if (Player* player = ObjectAccessor::FindConnectedPlayer(state.Carrier))
         {
-            if (orbTemplate.CarrierAura)
-                player->RemoveAurasDueToSpell(orbTemplate.CarrierAura);
+            for (uint32 spellId : orbTemplate.CarrierAuras)
+                if (spellId)
+                    player->RemoveAurasDueToSpell(spellId);
             player->SetObjectScale(state.CarrierOriginalScale);
         }
 
@@ -1823,7 +1896,7 @@ namespace AcherusOrbs
         state.StackTimer = 0;
 
         if (match.Status == MatchStatus::InProgress)
-            SetForgeBeam(match, orb, true);
+            SetForgeVisuals(match, orb, true);
 
         UpdateWorldStates(match);
 
@@ -1976,10 +2049,9 @@ namespace AcherusOrbs
 
         // the orb is never kept across a login, its aura may still have been saved by a crash
         for (OrbTemplate const& orbTemplate : OrbTemplates)
-        {
-            if (orbTemplate.CarrierAura)
-                player->RemoveAurasDueToSpell(orbTemplate.CarrierAura);
-        }
+            for (uint32 spellId : orbTemplate.CarrierAuras)
+                if (spellId)
+                    player->RemoveAurasDueToSpell(spellId);
 
         // back within MAX_OFFLINE_TIME, the player is still in the match where he logged out
         if (Match* match = GetMatch(player->GetGUID()))
