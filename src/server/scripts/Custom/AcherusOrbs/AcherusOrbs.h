@@ -61,7 +61,7 @@ namespace AcherusOrbs
         static constexpr uint32 GoFrostForge = 990001;
         static constexpr uint32 GoBloodForge = 990002;
         static constexpr uint32 GoUnholyForge = 990003;
-        static constexpr uint32 GoBerserkBuff = 990004;              // Berserk Buff (179905) that despawns when used
+        static constexpr uint32 GoPortal = 191539;                   // Doodad_Nox_portal_purple_bossroom17, the Acherus portal by the door (outside the match phases)
         static constexpr uint32 GoPreparationWall = 990005;          // invisible PvP collision wall (display of 180322), rings the preparation domes
         static constexpr uint32 GoPoolOfBlood = 990006;              // generic copy of the Pool of Blood fishing hole (194479), on the Blood forge
         static constexpr float PoolOfBloodScale = 3.0f;              // small puddle, hidden under the forge at its template size (0.75)
@@ -141,7 +141,12 @@ namespace AcherusOrbs
     {
         inline Position const Center = { 2459.4f, -5593.4f, 414.12f };
         inline Position const Door = { 2410.68f, -5626.74f, 420.66f };
-        inline Position const BerserkBuff = { 2383.65f, -5645.20f, 420.77f };  // portal to the upper floor, on the door -> Unholy forge axis
+
+        // the original portal (gameobject 151235) and its teleporter (NPC 29581, aura 54724) lead to the Hall of Command
+        // below; in the match it leads to the upper floor
+        inline Position const Portal = { 2383.65f, -5645.20f, 420.772f };
+        inline QuaternionData const PortalRotation = { 0.0f, 0.0f, 0.292371f, 0.956305f };
+        inline Position const PortalDestination = { 2517.900879f, -5554.814453f, 444.124817f, 3.740502f };
 
         inline std::array<Position, PVP_TEAMS_COUNT> const Spawn =
         {{
@@ -181,7 +186,6 @@ namespace AcherusOrbs
         static constexpr uint32 OrbStack = 15 * IN_MILLISECONDS;
         static constexpr uint32 PlayerCheck = 1 * IN_MILLISECONDS;
         static constexpr uint32 OfflineGrace = 300 * IN_MILLISECONDS;      // MAX_OFFLINE_TIME of battlegrounds
-        static constexpr uint32 BuffRespawn = 180 * IN_MILLISECONDS;       // BUFF_RESPAWN_TIME of battlegrounds
         static constexpr uint32 ReturnRetry = 1 * IN_MILLISECONDS;
         static constexpr uint8 ReturnMaxAttempts = 10;
         static constexpr uint32 ClientPing = 25 * IN_MILLISECONDS;         // client UI script safety probe interval
@@ -311,9 +315,7 @@ namespace AcherusOrbs
         std::array<ObjectGuid, PVP_TEAMS_COUNT> PreparationSpiritGuides;
         std::array<ObjectGuid, PVP_TEAMS_COUNT> PreparationDomes;
         std::vector<ObjectGuid> PreparationWalls;
-        ObjectGuid BerserkBuff;
-        bool BerserkBuffArmed = false;                              // seen ready since it was spawned
-        uint32 BerserkBuffTimer = 0;                                // time left to respawn it
+        ObjectGuid Portal;
         std::array<ObjectGuid, PVP_TEAMS_COUNT> Raids;              // battlefield raid of each team, not stored in the database
         std::unordered_map<ObjectGuid, ObjectGuid> ResurrectQueue; // players waiting at a spirit healer for the next wave, mapped to that guide
     };
@@ -398,8 +400,8 @@ namespace AcherusOrbs
         static void DespawnPreparationArea(Match& match, Map* map);
         static void DespawnCreature(Map* map, ObjectGuid& guid);
         static Position const& GetGraveyard(Match const& match, TeamId team);
-        void SpawnBerserkBuff(Match& match, Map* map);
-        void UpdateBerserkBuff(Match& match, uint32 diff);
+        static ObjectGuid SpawnPortal(Match const& match, Map* map);
+        static void UsePortal(Match const& match, Player* player);
         void SetForgeVisuals(Match& match, OrbType orb, bool on);
         static ObjectGuid SpawnForgeObject(Match const& match, Map* map, OrbTemplate const& orbTemplate, ForgeObjectTemplate const& objectTemplate);
         static ObjectGuid SummonForgeTrigger(Match const& match, Map* map, OrbTemplate const& orbTemplate, float scale);

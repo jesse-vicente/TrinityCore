@@ -66,6 +66,7 @@ namespace AcherusOrbs
         constexpr uint8 RequiredLevel = 80;
         constexpr float SpiritGuideOffset = 3.0f;                   // spirit guide stands in front of the respawn point
         constexpr float SpiritHealerRange = 17.0f;                  // client AREA_SPIRIT_HEALER_IN_RANGE radius, measured in game
+        constexpr float PortalRange = 3.0f;                         // radius of the Acherus teleporter aura (54724, SpellRadius 15)
         // forges and their visuals are seen from anywhere in the hall and outside it; only these objects, not the map setting
         constexpr VisibilityDistanceType ForgeVisibility = VisibilityDistanceType::Large;
 
@@ -857,7 +858,6 @@ namespace AcherusOrbs
             case MatchStatus::InProgress:
             {
                 UpdateCarriers(match, diff);
-                UpdateBerserkBuff(match, diff);
 
                 match.TickTimer += diff;
                 if (match.TickTimer >= Scoring::TickInterval)
@@ -952,6 +952,9 @@ namespace AcherusOrbs
                 player->RemoveAurasByType(SPELL_AURA_MOUNTED);
                 player->Dismount();
             }
+
+            if (match.Status == MatchStatus::InProgress)
+                UsePortal(match, player);
         }
 
         for (ObjectGuid const& guid : left)
@@ -1264,7 +1267,7 @@ namespace AcherusOrbs
             SetForgeVisuals(match, OrbType(orb), true);
 
         if (Map* map = sMapMgr->FindMap(Ids::MapId, 0))
-            SpawnBerserkBuff(match, map);
+            match.Portal = SpawnPortal(match, map);
 
         UpdateWorldStates(match);
 
@@ -1681,9 +1684,9 @@ namespace AcherusOrbs
             state.Forge.Clear();
         }
 
-        if (GameObject* buff = map->GetGameObject(match.BerserkBuff))
-            buff->Delete();
-        match.BerserkBuff.Clear();
+        if (GameObject* portal = map->GetGameObject(match.Portal))
+            portal->Delete();
+        match.Portal.Clear();
 
         for (ObjectGuid& guid : match.SpiritGuides)
             DespawnCreature(map, guid);
@@ -1694,72 +1697,36 @@ namespace AcherusOrbs
         DespawnPreparationArea(match, map);
     }
 
-    void Manager::SpawnBerserkBuff(Match& match, Map* map)
+    // the portal only shows where to step: like the original one, the teleport comes from standing on it (UsePortal)
+    ObjectGuid Manager::SpawnPortal(Match const& match, Map* map)
     {
-        match.BerserkBuffArmed = false;
-
-        // facing the pit
-        Position position = Positions::BerserkBuff;
-        position.SetOrientation(position.GetAbsoluteAngle(Positions::Center));
-
-        GameObject* buff = new GameObject();
-        if (!buff->Create(map->GenerateLowGuid<HighGuid::GameObject>(), Ids::GoBerserkBuff, map, match.PhaseMask, position,
-            QuaternionData::fromEulerAnglesZYX(position.GetOrientation(), 0.0f, 0.0f), 255, GO_STATE_READY))
+        GameObject* portal = new GameObject();
+        if (!portal->Create(map->GenerateLowGuid<HighGuid::GameObject>(), Ids::GoPortal, map, match.PhaseMask, Positions::Portal,
+            Positions::PortalRotation, 255, GO_STATE_ACTIVE))
         {
-            TC_LOG_ERROR("scripts", "AcherusOrbs: cannot create berserk buff gameobject {} for match {}", Ids::GoBerserkBuff, match.Id);
-            delete buff;
-            match.BerserkBuffTimer = Timers::BuffRespawn;
-            return;
+            TC_LOG_ERROR("scripts", "AcherusOrbs: cannot create portal gameobject {} for match {}", Ids::GoPortal, match.Id);
+            delete portal;
+            return ObjectGuid::Empty;
         }
 
-        buff->setActive(true);
-        if (!map->AddToMap(buff))
+        portal->setActive(true);
+        portal->SetVisibilityDistanceOverride(ForgeVisibility);
+        if (!map->AddToMap(portal))
         {
-            delete buff;
-            match.BerserkBuffTimer = Timers::BuffRespawn;
-            return;
+            delete portal;
+            return ObjectGuid::Empty;
         }
 
-        match.BerserkBuff = buff->GetGUID();
+        return portal->GetGUID();
     }
 
-    // battleground buffs are despawned and respawned by Battleground::HandleTriggerBuff. This one is a trap of type 1:
-    // it casts its spell, then goes GO_JUST_DEACTIVATED and GO_NOT_READY, and would arm itself again after its cooldown.
-    // A new trap also starts GO_NOT_READY, so it only counts as used after it was seen ready.
-    void Manager::UpdateBerserkBuff(Match& match, uint32 diff)
+    // same rule as the Acherus teleporter (aura 54724 of NPC 29581): within 3 yards, checked every second
+    void Manager::UsePortal(Match const& match, Player* player)
     {
-        Map* map = sMapMgr->FindMap(Ids::MapId, 0);
-        if (!map)
+        if (match.Portal.IsEmpty() || player->GetExactDist(&Positions::Portal) > PortalRange)
             return;
 
-        if (match.BerserkBuff.IsEmpty())
-        {
-            if (match.BerserkBuffTimer > diff)
-            {
-                match.BerserkBuffTimer -= diff;
-                return;
-            }
-
-            match.BerserkBuffTimer = 0;
-            SpawnBerserkBuff(match, map);
-            return;
-        }
-
-        GameObject* buff = map->GetGameObject(match.BerserkBuff);
-        if (buff)
-        {
-            LootState const state = buff->getLootState();
-            if (state == GO_READY)
-                match.BerserkBuffArmed = true;
-
-            if (state == GO_READY || state == GO_ACTIVATED || !match.BerserkBuffArmed)
-                return;
-
-            buff->Delete();
-        }
-
-        match.BerserkBuff.Clear();
-        match.BerserkBuffTimer = Timers::BuffRespawn;
+        player->NearTeleportTo(Positions::PortalDestination);
     }
 
     void Manager::SetForgeVisuals(Match& match, OrbType orb, bool on)

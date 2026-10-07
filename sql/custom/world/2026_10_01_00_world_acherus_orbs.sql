@@ -18,12 +18,8 @@ INSERT INTO `gameobject_template` (`entry`, `type`, `displayId`, `name`, `IconNa
 (990002, 10, 8175, 'Blood Runeforge',  '', '', '', 2.03, 'go_acherus_orbs_runeforge'),
 (990003, 10, 8175, 'Unholy Runeforge', '', '', '', 2.03, 'go_acherus_orbs_runeforge');
 
--- Berserk Buff, copy of the battleground one (179905) spawned per match by the script.
--- Trap type 1 (Data4) despawns after casting, the script respawns it after 3 minutes; Data2 = 0 and Data5 = 3 give
--- the 3 yard radius the core uses for battleground buffs.
+-- 990004 was the Berserk Buff, removed
 DELETE FROM `gameobject_template` WHERE `entry` = 990004;
-INSERT INTO `gameobject_template` (`entry`, `type`, `displayId`, `name`, `IconName`, `castBarCaption`, `unk1`, `size`, `Data2`, `Data3`, `Data4`, `Data5`) VALUES
-(990004, 6, 5995, 'Berserk Buff', '', '', '', 1, 0, 23505, 1, 3);
 
 -- Invisible collision wall (display of 180322, CollisionWallPvP01), spawned as an octagon around each preparation dome
 -- by the script. At size 0.8 each wall is ~8.9 yards wide, enough to close the octagon at 10 yards from the spawn.
