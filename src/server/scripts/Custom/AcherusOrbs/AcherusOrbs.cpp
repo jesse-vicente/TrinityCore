@@ -942,6 +942,10 @@ namespace AcherusOrbs
                         DropOrb(match, *orb, true);
                 }
 
+                // the spirit guides are on the upper floor: a ghost that dropped into the hall goes back up through the portal
+                if (match.Status == MatchStatus::InProgress && player->HasFlag(PLAYER_FLAGS, PLAYER_FLAGS_GHOST))
+                    UsePortal(match, player);
+
                 continue;
             }
 
