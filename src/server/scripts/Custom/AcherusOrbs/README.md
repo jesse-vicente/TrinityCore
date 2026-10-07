@@ -17,8 +17,8 @@ todo o comportamento é server-side e reaproveita só dados que o cliente já co
 | Duração | 25 min, depois vence o maior placar (igual = empate) | decisão do projeto |
 | Tick | a cada 5 s, por orbe carregado | script do Kotmogu no TrinityCore `master` |
 | Pontos por tick | poço central **6**, plataforma das forjas **4**, fora do salão **2** | valores do retail (script do `master`); a wiki cita 5/4/3 |
-| Buff do portador | por acúmulo: +10% dano causado, +30% dano recebido, -5% cura recebida; +1 acúmulo a cada 15 s | Wowhead, spell 121164 (Orb of Power) |
-| Escala do portador | +20% ao pegar, +10% por acúmulo, até 2x | decisão do projeto (sem fonte) |
+| Buff do portador | por acúmulo: +20% dano causado, +20% dano recebido, -10% cura recebida; +1 acúmulo a cada 15 s; tetos de +100%/+100%/-50% | decisão do projeto (inspirado na 121164, Orb of Power) |
+| Escala do portador | +20% por acúmulo, até 2x (+100%), travando em 5 acúmulos | decisão do projeto (sem fonte) |
 | Orbes | 1 por jogador, sem montaria; morte do portador devolve o orbe à forja | warcraft.wiki.gg |
 | Kill | +10 pontos para o time a cada kill de jogador inimigo, portador ou não (sem bônus extra por portador; a spell 112910 não existe no 3.3.5) | decisão do projeto |
 | Preparação | 2 min, cada time preso ao seu spawn, dentro de um domo com paredes invisíveis | duração: padrão de BG do core; domo: decisão do projeto, inspirado nas barreiras do Eye of the Storm |
@@ -177,6 +177,10 @@ Testado em jogo com os comandos `.debug bgui`, que eram um patch local de `cs_de
   de zoom (`MinimapSize` do Astrolabe, já ajustado ao Acherus), prendendo os ícones na borda.
 - **Mensagens de orbe:** `CHAT_MSG_RAID_BOSS_EMOTE`, que o cliente mostra em amarelo no centro da tela e também no
   chat. O nome do orbe vai colorido com códigos `|c` (Frost azul, Blood vermelho, Unholy verde).
+- **Aura do portador:** os Portal States (33338/33339/33340) aparecem na barra de buffs e o `acherus_orbs_ui.lua` os
+  relabela (ícone de spell de DK, nome e descrição) no jogador, target, boss, raid e no tooltip do party, além do FCT
+  (`CombatText_AddMessage`). A identificação é pelo nome localizado da spell, já que os três portais compartilham o
+  mesmo ícone do DBC. O combat log não é alterável por Lua.
 - **Pontos:** não há texto de combate nativo para pontos customizados (o "+N Victory Points" do Kotmogu vem de spells
   do retail). Quem pontua recebe "+N points" no topo (`SendAreaTriggerMessage`; o `SendNotification` sai em
   vermelho, como erro): o portador a cada tick e quem deu o golpe final no bônus de kill.
@@ -264,18 +268,28 @@ de cenário; tudo some quando o orbe é pego e volta quando ele retorna (`SetFor
 
 ### Portador
 
-| Orbe | Ao pegar (visual kit, uma vez) | Aura enquanto carrega |
+| Orbe | Ao pegar (visual kit, uma vez) | Auras enquanto carrega |
 |---|---|---|
-| Frost | 10288, da Frost Presence (48263) | 33344 Blue Banish State |
-| Blood | 10283, da Blood Presence (48266) | 33343 Red Banish State |
-| Unholy | 10297, da Unholy Presence (48265) | 32567 Green Banish State |
+| Frost | 10288, da Frost Presence (48263) | 31954 Spirit Particles + 33340 Blue Portal State |
+| Blood | 10283, da Blood Presence (48266) | 33338 Red Portal State + 31951 Spirit Particles |
+| Unholy | 10297, da Unholy Presence (48265) | 43161 + 43167 Spirit Particles + 33339 Green Portal State |
 
-As Banish State são dummy e têm `SPELL_ATTR0_HIDDEN_CLIENTSIDE`, então não aparecem na barra de buffs. As Wyrmrest
-Warden Beam usadas antes (55840/55824/55838) mostravam o ícone e tinham som de fogo na vermelha (`HellFireLoop`). A
-vermelha e a verde não têm som; a azul toca `DemonicSacrifice`, porque nenhuma Blue Banish State é silenciosa. O
-cliente só esconde o ícone pelo atributo do próprio DBC, e o visual só aparece se a aura estiver na lista de auras do
-cliente, então não há como esconder o ícone de uma aura sem esse atributo. Por isso os portais (33338/33339/33340)
-foram descartados: não existe versão oculta da vermelha (a 30396 só existe no `spell_dbc` do servidor).
+O corpo do portador combina partículas de espírito (o mesmo visual das forjas, agora nas auras do portador) com os
+Portal States. Os Portal States são dummy e **visíveis** na barra de buffs; o `acherus_orbs_ui.lua` reescreve o ícone,
+o nome e o tooltip de cada um (ícones de spell de DK, "Frost Orb"/"Blood Orb"/"Unholy Orb"), para um DK não terminar
+com dois ícones de presença idênticos na barra. As partículas (`31954`/`31951`/`43167`/`43161`, todas `spell_frost_wisp`)
+não são relabeladas: mantêm o próprio ícone na barra. As Banish State usadas antes (33344/33343/32567) têm
+`SPELL_ATTR0_HIDDEN_CLIENTSIDE`, então não aparecem na barra. Os três portais compartilham o mesmo ícone do DBC
+(`Spell_Arcane_PortalOrgrimmar`), por isso o cliente não os distingue pelo ícone e sim pelo nome localizado da spell
+(`GetSpellInfo`). Como as auras são visíveis e canceláveis, o `UpdateCarriers` reaplica qualquer aura do portador que
+suma (clique-direito), para o estado do servidor não dessincronizar do cliente.
+
+O servidor espelha as stacks do portador nas **charges** do portal: como o `CumulativeAura` (o `StackAmount` do
+servidor) dos portais é 0 no DBC, o campo `Applications` do pacote de aura usa as charges, então `SetCharges` faz o
+cliente mostrar o número de stacks no ícone e o `acherus_orbs_ui.lua` calcula os totais atuais (dano feito/tomado,
+cura recebida, escala) a partir desse count — para qualquer unidade, lendo `UnitBuff`. As stacks continuam subindo a
+cada 15 s, mas os quatro modificadores congelam em **5 acúmulos** nos tetos +100% dano feito, +100% dano tomado,
+−50% cura recebida e +100% escala (o número no ícone continua contando).
 
 As presenças não são aplicadas: têm efeito de stat (armadura, ameaça, dano, haste) e trocariam a presença de um DK. O
 script só toca o efeito delas (`SendPlaySpellVisualKit`, o `ImpactKit` do `SpellVisual.dbc`) uma vez ao pegar o orbe;
@@ -359,7 +373,11 @@ fora do agendador de checks) e então envia o Lua de UI por addon messages:
    frames; ao terminar, o script manda `AcherusBG\treturn 2` e o servidor loga "applied the client UI script".
    O toggle de `AcherusBG_UI.active` (enviado pelo servidor nas transições de fila/partida) chama
    `AcherusBG_UI.Relabel()` no mesmo instante, então o relabel é aplicado imediatamente — sem esperar o
-   próximo update de world state (que só acontece a cada 5 s na partida).
+   próximo update de world state (que só acontece a cada 5 s na partida). Na transição inativo→ativo, o
+   `Relabel` também re-dispara uma vez os updates nativos da barra de buffs (`BuffFrame_Update`,
+   `TargetFrame_UpdateAuras`) para que o relabel das auras do portador apareça logo após um `/reload`: a
+   barra já foi desenhada com o ícone do portal antes de o payload chegar, e os hooks só rodam no próximo
+   update de aura, que uma aura permanente nunca dispara.
 
 **Por que os corpos do handshake/ack são `return 1`/`return 2`:** as mensagens do modo são interceptadas
 no hook `OnPlayerAddonMessage` (`ChatHandler.cpp`), que retorna antes do `Guild::BroadcastToGuild` — então

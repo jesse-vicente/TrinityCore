@@ -164,6 +164,201 @@ watcher:RegisterEvent("UPDATE_BATTLEFIELD_SCORE")
 watcher:RegisterEvent("PLAYER_ENTERING_WORLD")
 watcher:SetScript("OnEvent", RelabelAll)
 
+-- ---------------------------------------------------------------------------- orb carrier auras
+-- The server applies a visible "Portal State" dummy aura to each orb carrier (33338 red/Blood, 33339
+-- green/Unholy, 33340 blue/Frost). All three share the same DBC icon, so they are told apart by the
+-- (localized) spell name queried once from the client, then relabeled with death knight icons. This keeps
+-- a death knight from ending up with two identical presence icons in the aura bar.
+
+local ORB_ICON_BLOOD = "Interface\\Icons\\Spell_Deathknight_BladedArmor"
+local ORB_ICON_UNHOLY = "Interface\\Icons\\Spell_Deathknight_EmpowerRuneblade"
+local ORB_ICON_FROST = "Interface\\Icons\\Spell_Deathknight_EmpowerRuneblade2"
+local ORB_DESC = "Carrying an orb from the runeforges of Acherus."
+
+local ORB_AURAS = {}
+do
+    local defs = {
+        { 33338, "Blood Orb", ORB_ICON_BLOOD },
+        { 33339, "Unholy Orb", ORB_ICON_UNHOLY },
+        { 33340, "Frost Orb", ORB_ICON_FROST },
+    }
+    for _, def in ipairs(defs) do
+        local spellName = GetSpellInfo(def[1])
+        if spellName then
+            ORB_AURAS[spellName] = {
+                name = def[2],
+                icon = def[3],
+                pattern = string.gsub(spellName, "%W", "%%%0"),
+            }
+        end
+    end
+end
+
+-- the orb aura is always a helpful buff, so the buff list works for every frame (a filter-less UnitAura
+-- would not necessarily match the index the frame used). The count is the stack amount the server keeps on
+-- the portal aura (its charges, since the portal is not stackable in the DBC).
+local function OrbAuraFor(unit, index)
+    local name, _, _, count = UnitBuff(unit, index)
+    return name and ORB_AURAS[name], count or 0
+end
+
+-- player buff frame; "buttonName" is the button name prefix, "BuffButton" for buffs
+hooksecurefunc("AuraButton_Update", function(buttonName, index)
+    if not AcherusBG_UI.active or buttonName ~= "BuffButton" then
+        return
+    end
+    local def = OrbAuraFor("player", index)
+    if def then
+        local icon = _G[buttonName .. index .. "Icon"]
+        if icon then
+            icon:SetTexture(def.icon)
+        end
+    end
+end)
+
+-- target frame, shared with the boss frames
+hooksecurefunc("TargetFrame_UpdateAuras", function(self)
+    if not AcherusBG_UI.active then
+        return
+    end
+    local frameName = self:GetName()
+    local maxBuffs = MAX_TARGET_BUFFS or 32
+    for i = 1, maxBuffs do
+        local def = OrbAuraFor(self.unit, i)
+        if def then
+            local icon = _G[frameName .. "Buff" .. i .. "Icon"]
+            if icon then
+                icon:SetTexture(def.icon)
+            end
+        end
+    end
+end)
+
+-- raid frame (UIParent.lua RefreshAuras, called with the "Aura" suffix)
+hooksecurefunc("RefreshAuras", function(frame, unit)
+    if not AcherusBG_UI.active then
+        return
+    end
+    local frameName = frame:GetName()
+    local maxAuras = MAX_RAID_AURAS or 4
+    for i = 1, maxAuras do
+        local def = OrbAuraFor(unit, i)
+        if def then
+            local icon = _G[frameName .. "Aura" .. i .. "Icon"]
+            if icon then
+                icon:SetTexture(def.icon)
+            end
+        end
+    end
+end)
+
+-- party buff tooltip; it only shows icons, and the index only counts the auras that are actually present
+hooksecurefunc("PartyMemberBuffTooltip_Update", function(self)
+    if not AcherusBG_UI.active then
+        return
+    end
+    local index = 1
+    local maxBuffs = MAX_PARTY_TOOLTIP_BUFFS or 16
+    for i = 1, maxBuffs do
+        local name = UnitBuff(self.unit, i)
+        if name then
+            local def = ORB_AURAS[name]
+            if def then
+                local icon = _G["PartyMemberBuffTooltipBuff" .. index .. "Icon"]
+                if icon then
+                    icon:SetTexture(def.icon)
+                end
+            end
+            index = index + 1
+        end
+    end
+end)
+
+-- Aura tooltips: the player buffs use SetUnitAura, the other frames use SetUnitBuff. The aura description
+-- has no Lua API, so it is appended here; Show() afterwards recomputes the tooltip height. The current totals
+-- are derived from the stack count the server mirrors on the aura (see OrbAuraFor).
+local function OrbTooltip(self, unit, index)
+    if not AcherusBG_UI.active then
+        return
+    end
+    local def, count = OrbAuraFor(unit, index)
+    if not def then
+        return
+    end
+    local line = _G[self:GetName() .. "TextLeft1"]
+    if line then
+        line:SetText(def.name)
+    end
+
+    local stacks = (count and count > 0) and count or 1
+    self:AddLine(ORB_DESC, 1, 1, 1)
+    self:AddLine(string.format("Damage done: +%d%%", math.min(100, 20 * stacks)), 1, 1, 1)
+    self:AddLine(string.format("Damage taken: +%d%%", math.min(100, 20 * stacks)), 1, 1, 1)
+    self:AddLine(string.format("Healing taken: -%d%%", math.min(50, 10 * stacks)), 1, 1, 1)
+    self:AddLine(string.format("Size: +%d%%", math.min(100, 20 + 20 * (stacks - 1))), 1, 1, 1)
+    self:AddLine(string.format("(%d stack%s, +1 every 15 sec)", stacks, stacks == 1 and "" or "s"), 1, 1, 1)
+    self:Show()
+end
+
+hooksecurefunc(GameTooltip, "SetUnitAura", OrbTooltip)
+hooksecurefunc(GameTooltip, "SetUnitBuff", OrbTooltip)
+
+-- floating combat text: the aura name is already baked into the message string, so rewrite it in the funnel
+if CombatText_AddMessage then
+    local OrbCombatText = CombatText_AddMessage
+    CombatText_AddMessage = function(message, ...)
+        if AcherusBG_UI.active and type(message) == "string" then
+            for _, def in pairs(ORB_AURAS) do
+                if string.find(message, def.pattern) then
+                    message = string.gsub(message, def.pattern, def.name)
+                end
+            end
+        end
+        return OrbCombatText(message, ...)
+    end
+end
+
+-- On the inactive -> active transition, force the already drawn frames to re-render once. After a /reload
+-- the buff bar is built with the portal icon before the payload arrives, and our per-frame hooks only run
+-- on the next aura update (which never comes for a permanent aura). Re-triggering the native updates runs
+-- the hooks immediately, so the rune appears without waiting.
+local orbsWereActive = false
+
+local function RefreshOrbAuras()
+    if BuffFrame_Update then
+        pcall(BuffFrame_Update)
+    end
+    if TargetFrame_UpdateAuras then
+        if TargetFrame then
+            pcall(TargetFrame_UpdateAuras, TargetFrame)
+        end
+        for i = 1, (MAX_BOSS_FRAMES or 4) do
+            local boss = _G["Boss" .. i .. "TargetFrame"]
+            if boss and boss:IsShown() then
+                pcall(TargetFrame_UpdateAuras, boss)
+            end
+        end
+    end
+end
+
+local function OnActiveChanged()
+    local active = AcherusBG_UI.active and not IsRealEyeOfTheStorm()
+    if active and not orbsWereActive then
+        RefreshOrbAuras()
+    end
+    orbsWereActive = active
+end
+
+-- The server flips AcherusBG_UI.active and calls Relabel() right after (re)applying the payload, so wrap
+-- the entry point defined above to catch that transition.
+local RelabelBase = AcherusBG_UI.Relabel
+if RelabelBase then
+    AcherusBG_UI.Relabel = function()
+        OnActiveChanged()
+        return RelabelBase()
+    end
+end
+
 -- ---------------------------------------------------------------------------- minimap orb markers
 -- The server pushes AcherusBG_Orbs.Update(px, py, x, y, name, ...) every 0.25 s through the same addon
 -- message channel. Positions are world coordinates (yards). The Ebon Hold world map is rotated 90 degrees

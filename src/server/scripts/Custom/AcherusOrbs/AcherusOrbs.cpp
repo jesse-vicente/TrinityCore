@@ -49,9 +49,9 @@ namespace AcherusOrbs
 {
     std::array<OrbTemplate, MAX_ORBS> const OrbTemplates =
     {{
-        { "Frost",  "ff69ccf0", Ids::GoFrostForge,  { 2493.37f, -5642.43f, 420.863f,  2.16421f  }, QuaternionData(0.0f, 0.0f,  0.882948f, 0.469471f), 3.0f, { Spells::ForgeSpiritsFrost, 0, 0, 0, 0 }, {}, {{ { Spells::ForgeBeamFrost, 2.0f }, { Spells::ForgeIceboundFrost, 8.0f } }}, VisualKits::CarrierFrost,  { Spells::CarrierAuraFrost } },
-        { "Blood",  "ffff3030", Ids::GoBloodForge,  { 2427.28f, -5544.45f, 420.863f, -0.983229f }, QuaternionData(0.0f, 0.0f, -0.47205f,  0.881572f), 3.0f, { Spells::ForgeSpiritsBlood, Spells::ForgeHysteriaBlood, 0, 0, 0 }, {{ { Ids::GoPoolOfBlood, Ids::PoolOfBloodScale } }}, {{ { Spells::ForgeBeamBlood, 1.8f } }}, VisualKits::CarrierBlood,  { Spells::CarrierAuraBlood } },
-        { "Unholy", "ff40ff40", Ids::GoUnholyForge, { 2509.31f, -5560.39f, 420.863f, -2.55402f  }, QuaternionData(0.0f, 0.0f, -0.957154f, 0.289578f), 5.0f, { Spells::ForgeSpiritsUnholyBase, Spells::ForgeSpiritsUnholy, 0, 0, 0 }, {{ { Ids::GoScourgeCircle, Ids::ScourgeCircleScale } }}, {{ { Spells::ForgePlagueUnholy, 1.0f }, { Spells::ForgeGhostStateUnholy, 1.0f } }}, VisualKits::CarrierUnholy, { Spells::CarrierAuraUnholy } }
+        { "Frost",  "ff69ccf0", Ids::GoFrostForge,  { 2493.37f, -5642.43f, 420.863f,  2.16421f  }, QuaternionData(0.0f, 0.0f,  0.882948f, 0.469471f), 3.0f, { Spells::ForgeSpiritsFrost, 0, 0, 0, 0 }, {}, {{ { Spells::ForgeBeamFrost, 2.0f }, { Spells::ForgeIceboundFrost, 8.0f } }}, VisualKits::CarrierFrost,  { Spells::ForgeSpiritsFrost, Spells::CarrierAuraFrost } },
+        { "Blood",  "ffff3030", Ids::GoBloodForge,  { 2427.28f, -5544.45f, 420.863f, -0.983229f }, QuaternionData(0.0f, 0.0f, -0.47205f,  0.881572f), 3.0f, { Spells::ForgeSpiritsBlood, Spells::ForgeHysteriaBlood, 0, 0, 0 }, {{ { Ids::GoPoolOfBlood, Ids::PoolOfBloodScale } }}, {{ { Spells::ForgeBeamBlood, 1.8f } }}, VisualKits::CarrierBlood,  { Spells::CarrierAuraBlood, Spells::ForgeSpiritsBlood } },
+        { "Unholy", "ff40ff40", Ids::GoUnholyForge, { 2509.31f, -5560.39f, 420.863f, -2.55402f  }, QuaternionData(0.0f, 0.0f, -0.957154f, 0.289578f), 5.0f, { Spells::ForgeSpiritsUnholyBase, Spells::ForgeSpiritsUnholy, 0, 0, 0 }, {{ { Ids::GoScourgeCircle, Ids::ScourgeCircleScale } }}, {{ { Spells::ForgePlagueUnholy, 1.0f }, { Spells::ForgeGhostStateUnholy, 1.0f } }}, VisualKits::CarrierUnholy, { Spells::ForgeSpiritsUnholyChest, Spells::ForgeSpiritsUnholy, Spells::CarrierAuraUnholy } }
     }};
 
     namespace
@@ -110,16 +110,35 @@ namespace AcherusOrbs
             return state.CarrierOriginalScale * (1.0f + bonus);
         }
 
-        void ApplyPermanentAura(Player* player, uint32 spellId)
+        Aura* ApplyPermanentAura(Player* player, uint32 spellId)
         {
             if (!spellId)
-                return;
+                return nullptr;
 
-            if (Aura* aura = player->AddAura(spellId, player))
-            {
-                aura->SetMaxDuration(-1);
-                aura->SetDuration(-1);
-            }
+            Aura* aura = player->AddAura(spellId, player);
+            if (!aura)
+                return nullptr;
+
+            aura->SetMaxDuration(-1);
+            aura->SetDuration(-1);
+            return aura;
+        }
+
+        // the portal aura is the visible carrier aura (the client relabels it). Its DBC CumulativeAura is 0,
+        // so the client applications field carries the charges instead: mirroring the stack count there makes
+        // the client show the stacks on the buff icon and exposes them through UnitBuff for the tooltip.
+        bool IsCarrierStackAura(uint32 spellId)
+        {
+            return spellId == Spells::CarrierAuraFrost || spellId == Spells::CarrierAuraBlood
+                || spellId == Spells::CarrierAuraUnholy;
+        }
+
+        void SetCarrierStackCharges(Player* player, OrbTemplate const& orbTemplate, uint32 stacks)
+        {
+            for (uint32 spellId : orbTemplate.CarrierAuras)
+                if (IsCarrierStackAura(spellId))
+                    if (Aura* aura = player->GetAura(spellId))
+                        aura->SetCharges(uint8(std::min<uint32>(stacks, 255)));
         }
 
         bool IsEligibleForMatch(Player const* player)
@@ -1070,10 +1089,25 @@ namespace AcherusOrbs
 
     void Manager::UpdateCarriers(Match& match, uint32 diff)
     {
-        for (OrbState& state : match.Orbs)
+        for (uint8 i = 0; i < MAX_ORBS; ++i)
         {
+            OrbState& state = match.Orbs[i];
             if (state.Carrier.IsEmpty())
                 continue;
+
+            Player* player = ObjectAccessor::FindConnectedPlayer(state.Carrier);
+
+            // the carrier aura is visible (the client relabels it) and cancelable: put it back if the player
+            // right-clicked it off, so the carried state never desyncs from the client visual
+            if (player)
+            {
+                for (uint32 spellId : OrbTemplates[i].CarrierAuras)
+                    if (spellId && !player->HasAura(spellId))
+                        ApplyPermanentAura(player, spellId);
+
+                // an aura that was just recreated starts without the stack count, so restore it every tick
+                SetCarrierStackCharges(player, OrbTemplates[i], state.Stacks);
+            }
 
             state.StackTimer += diff;
             if (state.StackTimer < Timers::OrbStack)
@@ -1082,8 +1116,11 @@ namespace AcherusOrbs
             state.StackTimer -= Timers::OrbStack;
             ++state.Stacks;
 
-            if (Player* player = ObjectAccessor::FindConnectedPlayer(state.Carrier))
+            if (player)
+            {
                 player->SetObjectScale(GetCarrierScale(state));
+                SetCarrierStackCharges(player, OrbTemplates[i], state.Stacks);
+            }
         }
     }
 
@@ -1867,7 +1904,9 @@ namespace AcherusOrbs
         player->SetObjectScale(GetCarrierScale(state));
         player->SendPlaySpellVisualKit(orbTemplate.CarrierVisualKit, 0);
         for (uint32 spellId : orbTemplate.CarrierAuras)
-            ApplyPermanentAura(player, spellId);
+            if (Aura* aura = ApplyPermanentAura(player, spellId))
+                if (IsCarrierStackAura(spellId))
+                    aura->SetCharges(uint8(std::min<uint32>(state.Stacks, 255)));
 
         SetForgeVisuals(match, orb, false);
         UpdateWorldStates(match);
@@ -2233,11 +2272,11 @@ namespace AcherusOrbs
 
         if (Player* player = attacker ? attacker->ToPlayer() : nullptr)
             if (OrbState const* state = GetCarriedOrbState(player->GetGUID()))
-                multiplier *= 1.0f + OrbPower::DamageDonePct * state->Stacks / 100.0f;
+                multiplier *= 1.0f + std::min(OrbPower::DamageDonePct * state->Stacks / 100.0f, OrbPower::DamageDoneMaxPct / 100.0f);
 
         if (Player* player = victim->ToPlayer())
             if (OrbState const* state = GetCarriedOrbState(player->GetGUID()))
-                multiplier *= 1.0f + OrbPower::DamageTakenPct * state->Stacks / 100.0f;
+                multiplier *= 1.0f + std::min(OrbPower::DamageTakenPct * state->Stacks / 100.0f, OrbPower::DamageTakenMaxPct / 100.0f);
 
         if (multiplier != 1.0f)
             damage = uint32(damage * multiplier);
@@ -2250,7 +2289,7 @@ namespace AcherusOrbs
 
         if (Player* player = receiver->ToPlayer())
             if (OrbState const* state = GetCarriedOrbState(player->GetGUID()))
-                gain = uint32(gain * std::max(0.0f, 1.0f + OrbPower::HealingTakenPct * state->Stacks / 100.0f));
+                gain = uint32(gain * (1.0f + std::max(OrbPower::HealingTakenMaxPct / 100.0f, OrbPower::HealingTakenPct * state->Stacks / 100.0f)));
 
         Player* player = healer ? healer->GetCharmerOrOwnerPlayerOrPlayerItself() : nullptr;
         if (!player)

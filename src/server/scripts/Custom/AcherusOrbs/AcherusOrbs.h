@@ -90,15 +90,18 @@ namespace AcherusOrbs
         static constexpr uint32 ForgeHysteriaBlood = 58361;          // The Might of Mograine: DeathKnight_Hysteria.mdx without the Hysteria sound; its effects (damage, healing, max health) do nothing on the trigger
         static constexpr uint32 ForgeSpiritsUnholyBase = 61894;      // Spirit Particles (green - Base): Spells\GreenGhost_state.mdx
         static constexpr uint32 ForgeSpiritsUnholy = 43167;          // Spirit Particles (green): Spells\GreenGhost_state.mdx
+        static constexpr uint32 ForgeSpiritsUnholyChest = 43161;     // Spirit Particles (green - Chest); also worn by the Unholy carrier
         static constexpr uint32 ForgePlagueUnholy = 63319;           // Saronite Animus Formation Visual: DeathKnight_PlagueStrikeState.mdx, already large at scale 1
         static constexpr uint32 ForgeGhostStateUnholy = 60426;       // Ghost State: sc_spirits_01.mdx
 
-        // permanent carrier auras, all dummy (no stat effect)
-        // Banish States are hidden from the aura bar (SPELL_ATTR0_HIDDEN_CLIENTSIDE); red and green are silent, the blue one
-        // has no silent version and plays DemonicSacrifice
-        static constexpr uint32 CarrierAuraFrost = 33344;            // Blue Banish State (banish_chest_blue)
-        static constexpr uint32 CarrierAuraBlood = 33343;            // Red Banish State (bloodbolt_chest)
-        static constexpr uint32 CarrierAuraUnholy = 32567;           // Green Banish State (Banish_Chest)
+        // permanent carrier auras, all dummy (no stat effect). Each orb combines spirit particles (visual)
+        // with a Portal State; the Portal States are visible in the aura bar (unlike the Banish States, which
+        // are SPELL_ATTR0_HIDDEN_CLIENTSIDE), so the client UI script can relabel them with death knight icons
+        // and avoid a death knight ending up with two presence icons. All three share the same icon
+        // (Spell_Arcane_PortalOrgrimmar), so the client tells them apart by the localized spell name.
+        static constexpr uint32 CarrierAuraFrost = 33340;            // Blue Portal State
+        static constexpr uint32 CarrierAuraBlood = 33338;            // Red Portal State
+        static constexpr uint32 CarrierAuraUnholy = 33339;           // Green Portal State
 
     }
 
@@ -187,14 +190,17 @@ namespace AcherusOrbs
 
     namespace OrbPower
     {
-        // per stack, a new stack every 15 seconds (Orb of Power, spell 121164)
-        static constexpr float DamageDonePct = 10.0f;
-        static constexpr float DamageTakenPct = 30.0f;
-        static constexpr float HealingTakenPct = -5.0f;
+        // per stack, a new stack every 15 seconds; the stacks keep counting but the modifiers freeze at the caps
+        static constexpr float DamageDonePct = 20.0f;               // +20% per stack
+        static constexpr float DamageDoneMaxPct = 100.0f;           // capped at 5 stacks
+        static constexpr float DamageTakenPct = 20.0f;              // +20% per stack
+        static constexpr float DamageTakenMaxPct = 100.0f;          // capped at 5 stacks
+        static constexpr float HealingTakenPct = -10.0f;            // -10% per stack
+        static constexpr float HealingTakenMaxPct = -50.0f;         // capped at 5 stacks
 
         static constexpr float ScaleBase = 0.2f;
-        static constexpr float ScalePerStack = 0.1f;
-        static constexpr float ScaleMax = 1.0f;                     // up to twice the original size
+        static constexpr float ScalePerStack = 0.2f;                // +20% per stack
+        static constexpr float ScaleMax = 1.0f;                     // up to twice the original size, capped at 5 stacks
     }
 
     enum OrbType : uint8
@@ -229,7 +235,7 @@ namespace AcherusOrbs
         std::array<ForgeObjectTemplate, 3> ForgeObjects;            // gameobjects spawned on the forge while the orb is ready
         std::array<ForgeScaledAura, 2> ForgeScaledAuras;            // auras on their own trigger, to size them apart from the others
         uint32 CarrierVisualKit;
-        std::array<uint32, 2> CarrierAuras;                         // permanent auras of the carrier (0 = none)
+        std::array<uint32, 3> CarrierAuras;                         // permanent auras of the carrier (0 = none)
     };
 
     extern std::array<OrbTemplate, MAX_ORBS> const OrbTemplates;
