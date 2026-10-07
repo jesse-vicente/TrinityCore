@@ -39,6 +39,21 @@ local function IsRealEyeOfTheStorm()
     return name ~= nil and GetRealZoneText() == name
 end
 
+-- The scoreboard stat column comes from GetBattlefieldStatInfo (localized text, tooltip and the Eye of the
+-- Storm flag icon). Swap it for our own column while the relabel is active: the empty icon makes the client
+-- draw the plain number (no flag, no "x") and the header uses our label and tooltip.
+local ORB_POINTS_TOOLTIP = "Points earned by holding orbs and killing enemies."
+
+if GetBattlefieldStatInfo then
+    local OrigBattlefieldStatInfo = GetBattlefieldStatInfo
+    GetBattlefieldStatInfo = function(index)
+        if AcherusBG_UI.active and not IsRealEyeOfTheStorm() and index == 1 then
+            return "Points", "", ORB_POINTS_TOOLTIP
+        end
+        return OrigBattlefieldStatInfo(index)
+    end
+end
+
 -- Replaces an exact substring in every FontString region of a frame and its direct children.
 local function Relabel(frame, from, to)
     if not frame or not frame.GetRegions then
@@ -151,26 +166,14 @@ local function FixAlwaysUp()
     end
 end
 
--- The score column header comes from the battleground stats (localized). The Eye of the Storm has a single
--- stat column, so set it by index instead of matching "Flag Captures".
-local function FixScoreColumns()
-    local num = GetNumBattlefieldStats and GetNumBattlefieldStats() or 0
-    for i = 1, num do
-        local fs = _G["WorldStateScoreColumn" .. i .. "Text"]
-        if fs and fs.SetText then
-            fs:SetText("Points")
-        end
-    end
-end
-
 local function RelabelAll()
     if not AcherusBG_UI.active or IsRealEyeOfTheStorm() then
         return
     end
 
-    -- top bar label and scoreboard column, both locale independent (no text matching)
+    -- top bar label, locale independent (no text matching); the score column is handled by the
+    -- GetBattlefieldStatInfo wrapper above
     FixAlwaysUp()
-    FixScoreColumns()
 
     -- battleground frames, minimap tooltip and dropdown title: the name comes from BattlemasterList.dbc, so
     -- match the localized name the client itself reports (nil outside the queue/match: nothing to relabel)

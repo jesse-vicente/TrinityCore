@@ -153,7 +153,8 @@ Testado em jogo com os comandos `.debug bgui`, que eram um patch local de `cs_de
   partida o `StartTimer` conta só o tempo decorrido de combate, sem a preparação. O cliente mostra os dois tempos sem
   segundos, então menos de 1 minuto aparece vazio. Com esse status, o cliente também passa a esperar a coluna do EotS
   (Flag Captures) no placar: cada jogador precisa mandar 1 stat, senão aparece lixo de memória. A coluna mostra os
-  pontos que o jogador fez para o time (ticks como portador + bônus de kill). O cliente deixa o valor 0 em branco.
+  pontos que o jogador fez para o time (ticks como portador + bônus de kill); o payload a relabela como "Points"
+  (tooltip próprio, sem o ícone de flag do EotS) e, por usar o caminho sem ícone do cliente, valores 0 aparecem como `0`.
 - **Spirit Healer:** funciona como nas BGs. Ao entrar no range do spirit guide com o ghost, o cliente manda
   `CMSG_AREA_SPIRIT_HEALER_QUEUE` (`AREA_SPIRIT_HEALER_IN_RANGE` → `AcceptAreaSpiritHeal()` + `StaticPopup_Show("AREA_SPIRIT_HEAL")`),
   o módulo responde com `SMSG_AREA_SPIRIT_HEALER_TIME` (o mesmo `TimeLeft` da BG) e o popup nativo `AREA_SPIRIT_HEAL` mostra
@@ -335,9 +336,12 @@ fora do agendador de checks) e então envia o Lua de UI por addon messages.
 O payload **não casa texto em inglês** (clientes em outro idioma, ou com patch de tradução, quebrariam):
 o nome do battleground é pedido à própria API (`GetBattlefieldStatus`, que devolve o nome localizado que o
 minimapa/lista exibem), o rótulo "Bases" é trocado reescrevendo o primeiro `<rótulo>:` de cada linha do topo
-(`AlwaysUpFrame<n>Text`, sem casar texto) e a coluna "Flag Captures" é atribuída por índice
-(`WorldStateScoreColumn<i>Text`, o Eye of the Storm tem 1 coluna). O guard da EotS real também compara o
-`GetRealZoneText()` localizado com o nome vindo da API, então continua válido em qualquer locale.
+(`AlwaysUpFrame<n>Text`, sem casar texto) e a coluna de stat é trocada envolvendo o `GetBattlefieldStatInfo`
+(rótulo "Points", tooltip próprio e ícone vazio — o Eye of the Storm tem 1 coluna, e o ícone vazio faz o
+cliente desenhar só o número, sem a flag e sem o "x" do EotS). O guard da EotS real também compara o
+`GetRealZoneText()` localizado com o nome vindo da API, então continua válido em qualquer locale. Como o
+caminho "sem ícone" do cliente sempre escreve o valor, linhas com 0 pontos mostram `0` (antes ficavam em
+branco).
 
 1. `Warden::SendLua` (novo no core) envia um `LUA_EVAL_CHECK` único, cifrado, quando o módulo chama. O
    bootstrap do listener vai em **dois evals** (cada um abaixo do teto de 166 chars do Lua do Warden): o
