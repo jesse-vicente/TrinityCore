@@ -80,6 +80,7 @@ namespace AcherusOrbs
         static constexpr uint32 ResurrectEffect = 6962;              // same spell Battleground::_ProcessResurrect casts on the revived player
         static constexpr uint32 SpiritHealMana = 44535;              // Spirit Heal, on the player after the resurrection
         static constexpr uint32 PreparationDome = 50461;             // Anti-Magic Zone: only its channel kit is used, the aura is never applied
+        static constexpr uint32 StairsPortal = 42049;                // Boss Frost Portal State (dummy), on the trigger at the top of the stairs
 
         // forge auras, on the forge triggers while the orb is ready; visual only (dummy, except 58361, see README)
         static constexpr uint32 ForgeSpiritsFrost = 31954;           // Spirit Particles, super big (DND): Spells\Ghost_state.mdx
@@ -147,6 +148,19 @@ namespace AcherusOrbs
         inline Position const Portal = { 2383.65f, -5645.20f, 420.772f };
         inline QuaternionData const PortalRotation = { 0.0f, 0.0f, 0.292371f, 0.956305f };
         inline Position const PortalDestination = { 2517.900879f, -5554.814453f, 444.124817f, 3.740502f };
+
+        // the top of the stairs behind that portal leads out to the balcony, and the gaps along the sides of the stairs
+        // lead to where the client switches to The Heart of Acherus. An invisible wall closes them (left bottom, left top,
+        // right top, right bottom) up to above the upper floor, so nobody jumps over it from there either
+        inline std::array<Position, 4> const StairsBarrier =
+        {{
+            { 2362.671387f, -5635.259766f, 420.713196f },
+            { 2361.644287f, -5646.252441f, 426.696899f },
+            { 2374.672363f, -5664.892090f, 426.658569f },
+            { 2385.154785f, -5668.484375f, 422.844604f }
+        }};
+        inline float const StairsBarrierTop = 444.227661f;            // floor of the upper floor
+        inline Position const StairsPortal = { 2369.197266f, -5655.271484f, 426.126343f, 0.623654f };  // facing the hall
 
         inline std::array<Position, PVP_TEAMS_COUNT> const Spawn =
         {{
@@ -316,6 +330,8 @@ namespace AcherusOrbs
         std::array<ObjectGuid, PVP_TEAMS_COUNT> PreparationDomes;
         std::vector<ObjectGuid> PreparationWalls;
         ObjectGuid Portal;
+        std::vector<ObjectGuid> StairsBarrier;
+        ObjectGuid StairsPortal;
         std::array<ObjectGuid, PVP_TEAMS_COUNT> Raids;              // battlefield raid of each team, not stored in the database
         std::unordered_map<ObjectGuid, ObjectGuid> ResurrectQueue; // players waiting at a spirit healer for the next wave, mapped to that guide
     };
@@ -397,6 +413,9 @@ namespace AcherusOrbs
         static ObjectGuid SummonSpiritGuide(Match const& match, Map* map, Position const& graveyard, TeamId team);
         static ObjectGuid SummonPreparationDome(Match const& match, Map* map, Position const& center);
         static void SpawnPreparationWalls(Match& match, Map* map, Position const& center);
+        static ObjectGuid SpawnWall(Match const& match, Map* map, Position const& position, float scale = 0.0f);
+        static void SpawnStairsBarrier(Match& match, Map* map);
+        static ObjectGuid SummonStairsPortal(Match const& match, Map* map);
         static void DespawnPreparationArea(Match& match, Map* map);
         static void DespawnCreature(Map* map, ObjectGuid& guid);
         static Position const& GetGraveyard(Match const& match, TeamId team);

@@ -67,6 +67,13 @@ namespace AcherusOrbs
         constexpr float SpiritGuideOffset = 3.0f;                   // spirit guide stands in front of the respawn point
         constexpr float SpiritHealerRange = 17.0f;                  // client AREA_SPIRIT_HEALER_IN_RANGE radius, measured in game
         constexpr float PortalRange = 3.0f;                         // radius of the Acherus teleporter aura (54724, SpellRadius 15)
+        constexpr float StairsPortalScale = 8.0f;
+        // collision box of CollisionWallPvP01 (GameObjectModels.dtree) at scale 1: 11.08 yards along its local Y axis and
+        // 17.56 high. Its only visible part is a thin checkered bar at its base (GameObjectDisplayInfo box: -0.36 to -0.07),
+        // which has to stay under the floor
+        constexpr float WallWidth = 11.078f;
+        constexpr float WallTop = 17.562f;
+        constexpr float StairsBarrierClearance = 3.0f;              // above the upper floor, beyond a jump from there
         // forges and their visuals are seen from anywhere in the hall and outside it; only these objects, not the map setting
         constexpr VisibilityDistanceType ForgeVisibility = VisibilityDistanceType::Large;
 
@@ -1513,6 +1520,9 @@ namespace AcherusOrbs
             match.PreparationDomes[team] = SummonPreparationDome(match, map, Positions::Spawn[team]);
             SpawnPreparationWalls(match, map, Positions::Spawn[team]);
         }
+
+        SpawnStairsBarrier(match, map);
+        match.StairsPortal = SummonStairsPortal(match, map);
     }
 
     ObjectGuid Manager::SummonSpiritGuide(Match const& match, Map* map, Position const& graveyard, TeamId team)
@@ -1565,21 +1575,86 @@ namespace AcherusOrbs
             Position const position(center.GetPositionX() + PreparationWallDistance * std::cos(angle),
                 center.GetPositionY() + PreparationWallDistance * std::sin(angle), center.GetPositionZ(), angle);
 
-            GameObject* wall = new GameObject();
-            if (!wall->Create(map->GenerateLowGuid<HighGuid::GameObject>(), Ids::GoPreparationWall, map, match.PhaseMask, position,
-                QuaternionData::fromEulerAnglesZYX(angle, 0.0f, 0.0f), 255, GO_STATE_READY))
-            {
-                TC_LOG_ERROR("scripts", "AcherusOrbs: cannot create preparation wall gameobject {} for match {}", Ids::GoPreparationWall, match.Id);
-                delete wall;
-                continue;
-            }
-
-            wall->setActive(true);
-            if (map->AddToMap(wall))
-                match.PreparationWalls.push_back(wall->GetGUID());
-            else
-                delete wall;
+            ObjectGuid const wall = SpawnWall(match, map, position);
+            if (!wall.IsEmpty())
+                match.PreparationWalls.push_back(wall);
         }
+    }
+
+    // one invisible collision wall facing the position's orientation, so it extends across it
+    ObjectGuid Manager::SpawnWall(Match const& match, Map* map, Position const& position, float scale /*= 0.0f*/)
+    {
+        GameObject* wall = new GameObject();
+        if (!wall->Create(map->GenerateLowGuid<HighGuid::GameObject>(), Ids::GoPreparationWall, map, match.PhaseMask, position,
+            QuaternionData::fromEulerAnglesZYX(position.GetOrientation(), 0.0f, 0.0f), 255, GO_STATE_READY))
+        {
+            TC_LOG_ERROR("scripts", "AcherusOrbs: cannot create wall gameobject {} for match {}", Ids::GoPreparationWall, match.Id);
+            delete wall;
+            return ObjectGuid::Empty;
+        }
+
+        if (scale > 0.0f)
+            wall->SetObjectScale(scale);
+
+        wall->setActive(true);
+        if (!map->AddToMap(wall))
+        {
+            delete wall;
+            return ObjectGuid::Empty;
+        }
+
+        return wall->GetGUID();
+    }
+
+    // overlapping walls along each segment of the barrier, in a single row: they all stand on the lowest floor of the
+    // barrier (the bottom of the gaps beside the stairs), so nothing passes under them and their visible base stays under
+    // the floor everywhere, and are scaled to reach above the upper floor
+    void Manager::SpawnStairsBarrier(Match& match, Map* map)
+    {
+        float bottom = Positions::StairsBarrier.front().GetPositionZ();
+        for (Position const& point : Positions::StairsBarrier)
+            bottom = std::min(bottom, point.GetPositionZ());
+
+        float const scale = (Positions::StairsBarrierTop + StairsBarrierClearance - bottom) / WallTop;
+        float const width = WallWidth * scale;
+
+        for (std::size_t i = 0; i + 1 < Positions::StairsBarrier.size(); ++i)
+        {
+            Position const& from = Positions::StairsBarrier[i];
+            Position const& to = Positions::StairsBarrier[i + 1];
+            float const facing = from.GetAbsoluteAngle(&to) - float(M_PI) / 2.0f;
+            uint32 const columns = uint32(std::ceil(from.GetExactDist2d(&to) / (width * 0.9f)));
+
+            for (uint32 column = 0; column < columns; ++column)
+            {
+                float const middle = (float(column) + 0.5f) / float(columns);
+                Position const position(from.GetPositionX() + (to.GetPositionX() - from.GetPositionX()) * middle,
+                    from.GetPositionY() + (to.GetPositionY() - from.GetPositionY()) * middle, bottom, facing);
+
+                ObjectGuid const wall = SpawnWall(match, map, position, scale);
+                if (!wall.IsEmpty())
+                    match.StairsBarrier.push_back(wall);
+            }
+        }
+    }
+
+    ObjectGuid Manager::SummonStairsPortal(Match const& match, Map* map)
+    {
+        TempSummon* trigger = map->SummonCreature(Ids::NpcBeamTrigger, Positions::StairsPortal);
+        if (!trigger)
+            return ObjectGuid::Empty;
+
+        trigger->SetPhaseMask(match.PhaseMask, true);
+        trigger->setActive(true);
+        trigger->SetVisibilityDistanceOverride(ForgeVisibility);
+        trigger->SetObjectScale(StairsPortalScale);
+        if (Aura* aura = trigger->AddAura(Spells::StairsPortal, trigger))
+        {
+            aura->SetMaxDuration(-1);
+            aura->SetDuration(-1);
+        }
+
+        return trigger->GetGUID();
     }
 
     void Manager::DespawnPreparationArea(Match& match, Map* map)
@@ -1691,6 +1766,17 @@ namespace AcherusOrbs
         if (GameObject* portal = map->GetGameObject(match.Portal))
             portal->Delete();
         match.Portal.Clear();
+
+        for (ObjectGuid const& guid : match.StairsBarrier)
+        {
+            if (GameObject* wall = map->GetGameObject(guid))
+            {
+                wall->SetRespawnTime(0);
+                wall->Delete();
+            }
+        }
+        match.StairsBarrier.clear();
+        DespawnCreature(map, match.StairsPortal);
 
         for (ObjectGuid& guid : match.SpiritGuides)
             DespawnCreature(map, guid);
