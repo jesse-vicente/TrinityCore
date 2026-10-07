@@ -330,7 +330,14 @@ São lidas no `OnStartup` e no `.reload config`. `ClientLuaFile` (caminho do `.l
 Os rótulos que o cliente herda do Eye of the Storm ("Bases", o nome no minimapa/na fila, "Flag Captures")
 vêm de DBC/FrameXML do cliente e não podem ser trocados pelo servidor. Para trocá-los sem distribuir
 addon, o módulo instala um listener de `CHAT_MSG_ADDON` no cliente **via `Warden::SendLua`** (on demand,
-fora do agendador de checks) e então envia o Lua de UI por addon messages:
+fora do agendador de checks) e então envia o Lua de UI por addon messages.
+
+O payload **não casa texto em inglês** (clientes em outro idioma, ou com patch de tradução, quebrariam):
+o nome do battleground é pedido à própria API (`GetBattlefieldStatus`, que devolve o nome localizado que o
+minimapa/lista exibem), o rótulo "Bases" é trocado reescrevendo o primeiro `<rótulo>:` de cada linha do topo
+(`AlwaysUpFrame<n>Text`, sem casar texto) e a coluna "Flag Captures" é atribuída por índice
+(`WorldStateScoreColumn<i>Text`, o Eye of the Storm tem 1 coluna). O guard da EotS real também compara o
+`GetRealZoneText()` localizado com o nome vindo da API, então continua válido em qualquer locale.
 
 1. `Warden::SendLua` (novo no core) envia um `LUA_EVAL_CHECK` único, cifrado, quando o módulo chama. O
    bootstrap do listener vai em **dois evals** (cada um abaixo do teto de 166 chars do Lua do Warden): o
@@ -388,7 +395,8 @@ porque um corpo cru (`R`/`DONE`) seria um erro de sintaxe caso alguma mensagem v
 mensagens de chat em CR/LF). O hook do tooltip do minimapa (`MiniMapBattlefieldFrame`) é feito de forma
 preguiçosa dentro do `RelabelAll` (o botão pode não existir quando o payload roda) e usa `HookScript` no
 `OnUpdate` do frame (o texto é reescrito a cada frame pelo `MiniMapBattlefieldFrame_OnUpdate` nativo),
-trocando "Eye of the Storm" por "Battle for Acherus" em todas as linhas do tooltip.
+trocando o nome localizado do battleground (obtido via `GetBattlefieldStatus`) por "Battle for Acherus" em
+todas as linhas do tooltip.
 
 **Por que o handshake não fica no bootstrap:** o wrapper do Warden é
 `local S,T,R=SendAddonMessage,function() <code> end ...`; em Lua os inicializadores de `local` são

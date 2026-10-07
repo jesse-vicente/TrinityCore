@@ -10,11 +10,33 @@ AcherusBG_UI = { active = false }
 
 local TITLE = "Battle for Acherus"
 
+-- The battleground name is localized (BattlemasterList.dbc), so we never hardcode "Eye of the Storm": we ask
+-- the client for it through the same API the UI uses. The server fakes the Acherus match as the Eye of the
+-- Storm, so GetBattlefieldStatus returns the very name the minimap, the dropdown and the list display.
+local function LocalizedAcherusName()
+    local fallback
+    for i = 1, (MAX_BATTLEFIELD_QUEUES or 2) do
+        local status, mapName = GetBattlefieldStatus(i)
+        if status and status ~= "none" and mapName and mapName ~= "" then
+            if status == "active" then
+                return mapName
+            end
+            fallback = fallback or mapName
+        end
+    end
+    return fallback
+end
+
 -- The server only turns the relabel on while the player is in the Acherus queue or match (AcherusBG_UI.active).
--- Belt-and-suspenders: never touch the real Eye of the Storm instance, even if a toggle was missed.
+-- Belt-and-suspenders: never touch the real Eye of the Storm instance, even if a toggle was missed. The name
+-- comparison uses the localized name above, so it holds on every client locale.
 local function IsRealEyeOfTheStorm()
     local _, instanceType = IsInInstance()
-    return instanceType == "pvp" and GetRealZoneText() == "Eye of the Storm"
+    if instanceType ~= "pvp" then
+        return false
+    end
+    local name = LocalizedAcherusName()
+    return name ~= nil and GetRealZoneText() == name
 end
 
 -- Replaces an exact substring in every FontString region of a frame and its direct children.
@@ -71,12 +93,17 @@ local function HookMinimap()
             return
         end
 
+        local from = LocalizedAcherusName()
+        if not from then
+            return
+        end
+
         for i = 1, GameTooltip:NumLines() do
             local line = _G["GameTooltipTextLeft" .. i]
             if line and line.GetText and line.SetText then
                 local text = line:GetText()
-                if type(text) == "string" and string.find(text, "Eye of the Storm", 1, true) then
-                    line:SetText((string.gsub(text, "Eye of the Storm", TITLE)))
+                if type(text) == "string" and string.find(text, from, 1, true) then
+                    line:SetText((string.gsub(text, from, TITLE)))
                 end
             end
         end
@@ -99,9 +126,40 @@ local function HookMinimap()
             if not AcherusBG_UI.active or IsRealEyeOfTheStorm() then
                 return
             end
-            Relabel(DropDownList1, "Eye of the Storm", TITLE)
-            Relabel(DropDownList2, "Eye of the Storm", TITLE)
+            local from = LocalizedAcherusName()
+            if not from then
+                return
+            end
+            Relabel(DropDownList1, from, TITLE)
+            Relabel(DropDownList2, from, TITLE)
         end)
+    end
+end
+
+-- The top bar row is a localized format ("Bases: N  Victory Points: N/1600" for the Eye of the Storm), so the
+-- "Bases" label cannot be matched as text. Rewrite the leading "<label>:" of each always-up row instead,
+-- whatever locale, and let the client keep filling the numbers.
+local function FixAlwaysUp()
+    for i = 1, (NUM_ALWAYS_UP_UI_FRAMES or 4) do
+        local fs = _G["AlwaysUpFrame" .. i .. "Text"]
+        if fs and fs.GetText and fs.SetText then
+            local text = fs:GetText()
+            if type(text) == "string" and string.find(text, ":", 1, true) then
+                fs:SetText((string.gsub(text, "^.-:", "Orbs:", 1)))
+            end
+        end
+    end
+end
+
+-- The score column header comes from the battleground stats (localized). The Eye of the Storm has a single
+-- stat column, so set it by index instead of matching "Flag Captures".
+local function FixScoreColumns()
+    local num = GetNumBattlefieldStats and GetNumBattlefieldStats() or 0
+    for i = 1, num do
+        local fs = _G["WorldStateScoreColumn" .. i .. "Text"]
+        if fs and fs.SetText then
+            fs:SetText("Points")
+        end
     end
 end
 
@@ -110,22 +168,19 @@ local function RelabelAll()
         return
     end
 
-    -- top score bar of the fake Eye of the Storm frame: "Bases" -> "Orbs"
-    Relabel(WorldStateAlwaysUpFrame, "Bases", "Orbs")
-    Relabel(WorldStateFrame, "Bases", "Orbs")
+    -- top bar label and scoreboard column, both locale independent (no text matching)
+    FixAlwaysUp()
+    FixScoreColumns()
 
-    -- final scoreboard objective column: "Flag Captures" -> "Points"
-    Relabel(WorldStateScoreFrame, "Flag Captures", "Points")
-    Relabel(ScoreboardFrame, "Flag Captures", "Points")
-
-    -- PvP / battleground queue frames: the battleground name comes from BattlemasterList.dbc
-    Relabel(PVPFrame, "Eye of the Storm", TITLE)
-    Relabel(BattlefieldFrame, "Eye of the Storm", TITLE)
-    Relabel(PVPBattlefieldFrame, "Eye of the Storm", TITLE)
-
-    -- shared dropdown menu frames (right-click on the minimap battleground button)
-    Relabel(DropDownList1, "Eye of the Storm", TITLE)
-    Relabel(DropDownList2, "Eye of the Storm", TITLE)
+    -- battleground frames, minimap tooltip and dropdown title: the name comes from BattlemasterList.dbc, so
+    -- match the localized name the client itself reports (nil outside the queue/match: nothing to relabel)
+    local from = LocalizedAcherusName()
+    if from then
+        Relabel(BattlefieldFrame, from, TITLE)
+        Relabel(PVPBattlefieldFrame, from, TITLE)
+        Relabel(DropDownList1, from, TITLE)
+        Relabel(DropDownList2, from, TITLE)
+    end
 
     HookMinimap()
 end
