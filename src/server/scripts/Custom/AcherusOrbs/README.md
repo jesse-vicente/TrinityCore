@@ -170,8 +170,11 @@ Testado em jogo com os comandos `.debug bgui`, que eram um patch local de `cs_de
   fake (active ou queued) e reenvia o active assim que o jogador entra no mundo. Clicar no ícone abre o placar. O nome
   "Eye of the Storm" vem do `BattlemasterList.dbc` do cliente e não pode ser trocado sem patch.
 - **Marcadores das orbs no minimapa:** ícones desenhados por Lua (payload do cliente) parentados ao `Minimap`, um por
-  orb, com o ícone da presença de DK (Frost/Blood/Unholy) recortado via `SetTexCoord` (tira a borda clara embutida na
-  textura). O servidor manda a posição de mundo do jogador e de cada orb (do portador, ou da forja se não portado) a
+  orb, com o ícone da presença de DK (Frost/Blood/Unholy) em 18×18 e recortado via `SetTexCoord` em texels inteiros do
+  ícone de 64×64 (0.0625/0.9375, tira a borda clara embutida sem misturar a linha de borda fracionária). Como o 3.3.5
+  não expõe filtro/mipmap/snapping por textura, o marcador só é re-ancorado quando anda ≥1 px, para não re-rasterizar o
+  ícone reduzido em offsets sub-pixel a cada frame (é isso que fazia serrilhar/cintilar ao mover). O servidor manda a
+  posição de mundo do jogador e de cada orb (do portador, ou da forja se não portado) a
   cada 0,25 s pelo canal de addon messages (`AcherusBG_Orbs.Update`). O cliente reconstrói a posição do jogador a cada
   frame via `GetPlayerMapPosition` (transformação mundo↔mapa **fixa** no Lua, valores do `WorldMapArea.dbc` do cliente)
   para o movimento ficar suave, segue o unit token dos portadores do mesmo time e converte para o minimapa com o span

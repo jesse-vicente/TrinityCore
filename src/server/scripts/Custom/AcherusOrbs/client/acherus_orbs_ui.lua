@@ -442,7 +442,7 @@ AcherusBG_Orbs = { data = nil, icons = {} }
 
 local function CreateMarker(texture)
     local frame = CreateFrame("Frame", nil, Minimap)
-    frame:SetSize(14, 14)
+    frame:SetSize(18, 18)
     -- one level above the map terrain, below every minimap button: the Blizzard buttons sit at
     -- MinimapBackdrop+1/+2 (Minimap+2/+3) and MiniMapInstanceDifficulty at MinimapCluster+10
     frame:SetFrameLevel(Minimap:GetFrameLevel() + 1)
@@ -450,8 +450,9 @@ local function CreateMarker(texture)
     frame.icon = frame:CreateTexture(nil, "ARTWORK")
     frame.icon:SetAllPoints()
     frame.icon:SetTexture(texture)
-    -- spell icons carry a light border baked into the texture; crop it off (the usual 7% trim)
-    frame.icon:SetTexCoord(0.07, 0.93, 0.07, 0.93)
+    -- spell icons carry a light border baked into the texture; crop it off on whole texels of the 64x64
+    -- icon (4/64 and 60/64), so the downscale does not blend a fractional border row into the edge
+    frame.icon:SetTexCoord(0.0625, 0.9375, 0.0625, 0.9375)
 
     frame:Hide()
     return frame
@@ -518,7 +519,7 @@ orbDriver:SetScript("OnUpdate", function()
     local sinFacing, cosFacing = math.sin(facing), math.cos(facing)
 
     -- clamp the markers to the minimap edge (icon half size plus a small margin), so far ones stay on the rim
-    local margin = 9
+    local margin = 11
     local halfW = Minimap:GetWidth() / 2 - margin
     local halfH = Minimap:GetHeight() / 2 - margin
     local isSquare = GetMinimapShape and GetMinimapShape() == "SQUARE"
@@ -539,6 +540,13 @@ orbDriver:SetScript("OnUpdate", function()
             local factor = maxDist / dist
             dx, dy = dx * factor, dy * factor
         end
+
+        -- re-anchor only once the marker moved at least a pixel: re-rasterizing the downscaled icon at
+        -- sub-pixel offsets every frame is what makes it shimmer while moving
+        if icon:IsShown() and icon.lastX and math.abs(dx - icon.lastX) < 1 and math.abs(dy - icon.lastY) < 1 then
+            return
+        end
+        icon.lastX, icon.lastY = dx, dy
 
         icon:ClearAllPoints()
         icon:SetPoint("CENTER", Minimap, "CENTER", dx, dy)
