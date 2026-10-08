@@ -180,7 +180,6 @@ local function RelabelAll()
     local from = LocalizedAcherusName()
     if from then
         Relabel(BattlefieldFrame, from, TITLE)
-        Relabel(PVPBattlefieldFrame, from, TITLE)
         Relabel(DropDownList1, from, TITLE)
         Relabel(DropDownList2, from, TITLE)
     end
@@ -221,6 +220,158 @@ watcher:RegisterEvent("UPDATE_BATTLEFIELD_STATUS")
 watcher:RegisterEvent("UPDATE_BATTLEFIELD_SCORE")
 watcher:RegisterEvent("PLAYER_ENTERING_WORLD")
 watcher:SetScript("OnEvent", RelabelAll)
+
+-- ---------------------------------------------------------------------------- PvP battleground list
+-- The client's Battlegrounds tab (PVPBattlegroundFrame) lists the battleground types of BattlemasterList.dbc,
+-- so a custom mode the client has no type for cannot come from the server. Expose one synthetic entry by
+-- wrapping the two APIs that list reads (GetNumBattlegroundTypes/GetBattlegroundInfo): the native update then
+-- counts it, draws its row and includes it in the scroll range like any other battleground, so it scrolls
+-- with the list. The Eye of the Storm type is the one the server fakes the Acherus match with, so the queue
+-- icon must be moved from that row to ours.
+
+local ACHERUS_BG_TEXTURE = "Interface\\PVPFrame\\PvpRandomBg" -- the same art the Random Battleground uses
+local ACHERUS_BG_LORE =
+    "The runeforges of Acherus have become the prize of a bitter quarrel.\n\n\nThe Knights of the Ebon Blade " ..
+    "have turned on one another over who will command them, and the Alliance and the Horde have seized the " ..
+    "chance to exploit that schism - each faction intent on turning the death knights' strife to its own gain."
+
+local OrigGetNumBattlegroundTypes = GetNumBattlegroundTypes
+local OrigGetBattlegroundInfo = GetBattlegroundInfo
+
+-- our synthetic entry is appended after every real type (its index follows the sorted DBC list)
+local function AcherusBGIndex()
+    return (OrigGetNumBattlegroundTypes and OrigGetNumBattlegroundTypes() or 0) + 1
+end
+
+if OrigGetNumBattlegroundTypes and OrigGetBattlegroundInfo then
+    GetNumBattlegroundTypes = function()
+        return OrigGetNumBattlegroundTypes() + 1
+    end
+    GetBattlegroundInfo = function(index)
+        if index == AcherusBGIndex() then
+            -- name, canEnter, isHoliday, isRandom, BattleGroundID (an id outside PVPBATTLEGROUND_TEXTURELIST)
+            return TITLE, true, false, false, 999
+        end
+        return OrigGetBattlegroundInfo(index)
+    end
+end
+
+-- the art is the very texture the Random Battleground entry shows, so its size, position, alpha and layer are
+-- exactly those of the other battlegrounds (the native update only swaps the texture file)
+local function ApplyAcherusInfo()
+    if PVPBattlegroundFrameBGTex then
+        PVPBattlegroundFrameBGTex:SetTexture(ACHERUS_BG_TEXTURE)
+        PVPBattlegroundFrameBGTex:SetTexCoord(0.0, 0.6504, 0.0, 0.9414) -- the crop the XML applies
+        PVPBattlegroundFrameBGTex:Show()
+    end
+    local desc = PVPBattlegroundFrameInfoScrollFrameChildFrameDescription
+    if desc then
+        desc:SetText(ACHERUS_BG_LORE)
+        desc:Show()
+    end
+    local rewards = PVPBattlegroundFrameInfoScrollFrameChildFrameRewardsInfo
+    if rewards then
+        rewards:Hide()
+    end
+    if PVPBattlegroundFrameInfoScrollFrame then
+        PVPBattlegroundFrameInfoScrollFrame:SetVerticalScroll(0)
+    end
+end
+
+-- intercept our entry before the native path (which would query GetBattlefieldInfo and get nothing useful)
+if PVPBattleground_UpdateInfo then
+    local OrigUpdateInfo = PVPBattleground_UpdateInfo
+    PVPBattleground_UpdateInfo = function(BGindex)
+        if BGindex == nil and PVPBattlegroundFrame then
+            BGindex = PVPBattlegroundFrame.selectedBG
+        end
+        if BGindex == AcherusBGIndex() then
+            ApplyAcherusInfo()
+            return
+        end
+        OrigUpdateInfo(BGindex)
+    end
+end
+
+-- mirror the native queued/confirm icon onto our row and keep it off the real battleground rows while the
+-- queue is Acherus (AcherusBG_UI.active is only on for this mode)
+local function AcherusQueueStatus()
+    local row
+    for i = 1, (NUM_DISPLAYED_BATTLEGROUNDS or 5) do
+        local b = _G["BattlegroundType" .. i]
+        if b then
+            if b.BGindex == AcherusBGIndex() then
+                row = b
+            elseif AcherusBG_UI.active and b.status then
+                b.status:Hide()
+            end
+        end
+    end
+
+    if not row or not row.status then
+        return
+    end
+
+    row.status:Hide()
+    if not AcherusBG_UI.active then
+        return
+    end
+
+    local from = LocalizedAcherusName()
+    for i = 1, (MAX_BATTLEFIELD_QUEUES or 2) do
+        local status, mapName = GetBattlefieldStatus(i)
+        if status and status ~= "none" and mapName == from then
+            if status == "queued" then
+                row.status.texture:SetTexture("Interface\\PVPFrame\\PVP-Currency-" ..
+                    (UnitFactionGroup("player") or "Alliance"))
+                row.status.texture:SetTexCoord(0.0, 1.0, 0.0, 1.0)
+                row.status.tooltip = BATTLEFIELD_QUEUE_STATUS
+                row.status:Show()
+            elseif status == "confirm" then
+                row.status.texture:SetTexture("Interface\\CharacterFrame\\UI-StateIcon")
+                row.status.texture:SetTexCoord(0.45, 0.95, 0.0, 0.5)
+                row.status.tooltip = BATTLEFIELD_CONFIRM_STATUS
+                row.status:Show()
+            end
+            break
+        end
+    end
+end
+
+if PVPBattleground_UpdateQueueStatus then
+    hooksecurefunc("PVPBattleground_UpdateQueueStatus", AcherusQueueStatus)
+end
+
+-- the native Join queues "first available"; for our entry send the module command instead
+local function AcherusJoin(self, button, down)
+    if PVPBattlegroundFrame and PVPBattlegroundFrame.selectedBG == AcherusBGIndex() then
+        SendChatMessage(".acherus queue", "SAY")
+        return
+    end
+    if self.AcherusOrigOnClick then
+        self.AcherusOrigOnClick(self, button, down)
+    end
+end
+
+for _, buttonName in ipairs({ "PVPBattlegroundFrameJoinButton", "PVPBattlegroundFrameGroupJoinButton" }) do
+    local button = _G[buttonName]
+    if button and button.GetScript and button.SetScript then
+        local original = button:GetScript("OnClick")
+        if original then
+            button.AcherusOrigOnClick = original
+            button:SetScript("OnClick", AcherusJoin)
+        end
+    end
+end
+
+-- the panel does not re-render the info for our entry on show (it only requests the real type instances)
+if PVPBattlegroundFrame and PVPBattlegroundFrame.HookScript then
+    PVPBattlegroundFrame:HookScript("OnShow", function()
+        if PVPBattlegroundFrame.selectedBG == AcherusBGIndex() then
+            ApplyAcherusInfo()
+        end
+    end)
+end
 
 -- ---------------------------------------------------------------------------- orb carrier auras
 -- The server applies a visible "Portal State" dummy aura to each orb carrier (33338 red/Blood, 33339
@@ -413,7 +564,11 @@ local RelabelBase = AcherusBG_UI.Relabel
 if RelabelBase then
     AcherusBG_UI.Relabel = function()
         OnActiveChanged()
-        return RelabelBase()
+        local result = RelabelBase()
+        -- the battlefield status can arrive before the active flag flips, leaving the list queue icon on the
+        -- Eye of the Storm row: re-place it now instead of waiting for the next list update
+        AcherusQueueStatus()
+        return result
     end
 end
 

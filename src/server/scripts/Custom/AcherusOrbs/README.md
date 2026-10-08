@@ -169,6 +169,20 @@ Testado em jogo com os comandos `.debug bgui`, que eram um patch local de `cs_de
   enviado antes de terminar de carregar o mundo; por isso o módulo responde o `CMSG_BATTLEFIELD_STATUS` com o status
   fake (active ou queued) e reenvia o active assim que o jogador entra no mundo. Clicar no ícone abre o placar. O nome
   "Eye of the Storm" vem do `BattlemasterList.dbc` do cliente e não pode ser trocado sem patch.
+- **Lista de BGs da janela PvP (aba Battlegrounds):** o `PVPBattlegroundFrame` lista os tipos do
+  `BattlemasterList.dbc` (que não tem id livre). O payload expõe uma entrada sintética "Battle for Acherus"
+  **envolvendo `GetNumBattlegroundTypes`/`GetBattlegroundInfo`** (mais uma entrada, no fim): assim o próprio
+  `PVPBattleground_UpdateBattlegrounds` conta a linha, desenha e inclui no range do `FauxScrollFrame`, rolando
+  junto com as demais. Selecionar a linha (o payload intercepta `PVPBattleground_UpdateInfo`) troca o texto pela lore
+  e o fundo pela **mesma textura do "Random Battleground"** (`Interface\PVPFrame\PvpRandomBg`, via `SetTexture` +
+  `SetTexCoord` do XML no `PVPBattlegroundFrameBGTex`), o que dá tamanho/posição/alpha/camada idênticos às outras
+  BGs sem depender de um asset de Acherus (o loading screen do Ebon Hold é escuro e não serve). "Join"/"Join as
+  Group" manda `.acherus queue` no chat (sem fechar o painel, como o Join nativo). Ao enfileirar, o ícone da lista é
+  reposicionado na hora pelo `AcherusBG_UI.Relabel` (o status pode chegar antes do flag `active`).
+  Enquanto a fila Acherus está ativa
+  (`AcherusBG_UI.active`), o ícone de queue é movido da linha do EotS para a linha Acherus; o EotS real continua
+  na lista. (O payload também corrige o alvo morto do relabel: `PVPBattlefieldFrame` não existe — o frame é
+  `PVPBattlegroundFrame`.)
 - **Marcadores das orbs no minimapa:** ícones desenhados por Lua (payload do cliente) parentados ao `Minimap`, um por
   orb, com o ícone da presença de DK (Frost/Blood/Unholy) em 18×18 e recortado via `SetTexCoord` em texels inteiros do
   ícone de 64×64 (0.0625/0.9375, tira a borda clara embutida sem misturar a linha de borda fracionária). Como o 3.3.5
@@ -198,7 +212,9 @@ Testado em jogo com os comandos `.debug bgui`, que eram um patch local de `cs_de
 
 ## Fluxo da partida
 
-1. **Fila:** NPC `990000` (posicionar com `.npc add 990000`; hoje fica em Old Town, Stormwind) ou `.acherus queue`.
+1. **Fila:** NPC `990000` (posicionar com `.npc add 990000`; hoje fica em Old Town, Stormwind), `.acherus queue`
+   (GM: jogador selecionado ou você, alterna; jogador comum: só você, sem alternar) ou o botão "Join" da linha
+   "Battle for Acherus" na aba Battlegrounds da janela PvP (manda `.acherus queue` no chat).
    Exige nível 80 e o jogador não pode estar em BG, arena nem em fila de BG/arena real (`InBattlegroundQueue`). As
    filas são separadas por facção. Enquanto espera, o jogador recebe um battlefield status "queued" fake, então o
    botão de BG aparece no minimapa e o "Leave Queue" da janela PvP sai da fila.
@@ -435,15 +451,18 @@ do Warden (inclusive os de anti-cheat 788/789/790), não só o nosso. Não há c
 (o upstream não conseguiu reproduzir de forma consistente). O erro não crasha o cliente e os relabels
 funcionam normalmente; a única forma de evitá-lo seria distribuir um addon de cliente (descartado).
 
-## Comandos GM (permissão `RBAC_PERM_COMMAND_DEBUG`)
+## Comandos
 
-| Comando | Efeito |
-|---|---|
-| `.acherus queue` | coloca/tira o jogador selecionado (ou você) da fila |
-| `.acherus start` | inicia uma partida com quem está na fila, ignorando o mínimo |
-| `.acherus begin` | pula a preparação da sua partida, como o `.bg start`; fora de uma partida (ou no console), de todas as partidas em preparação |
-| `.acherus stop` | encerra todas as partidas como empate |
-| `.acherus status` | partidas, phase, tempo, placar e tamanho das filas |
+`.acherus queue` usa `RBAC_PERM_JOIN_NORMAL_BG` (que todo jogador já tem), porque o botão "Join" da janela PvP o
+dispara; para quem **não** é GM ele enfileira só a si mesmo e não alterna. Os demais usam `RBAC_PERM_COMMAND_DEBUG`.
+
+| Comando | Permissão | Efeito |
+|---|---|---|
+| `.acherus queue` | `JOIN_NORMAL_BG` | GM: coloca/tira o jogador selecionado (ou você) da fila; jogador: enfileira só a si (sem alternar) |
+| `.acherus start` | `COMMAND_DEBUG` | inicia uma partida com quem está na fila, ignorando o mínimo |
+| `.acherus begin` | `COMMAND_DEBUG` | pula a preparação da sua partida, como o `.bg start`; fora de uma partida (ou no console), de todas as partidas em preparação |
+| `.acherus stop` | `COMMAND_DEBUG` | encerra todas as partidas como empate |
+| `.acherus status` | `COMMAND_DEBUG` | partidas, phase, tempo, placar e tamanho das filas |
 
 GMs com `.gm on` veem todas as phases. Para jogar uma partida, use `.gm off`.
 

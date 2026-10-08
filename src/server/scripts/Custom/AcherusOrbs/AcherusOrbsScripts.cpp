@@ -282,7 +282,9 @@ public:
     {
         static ChatCommandTable acherusCommandTable =
         {
-            { "queue",  HandleQueueCommand,  rbac::RBAC_PERM_COMMAND_DEBUG, Console::No },
+            // players reach this through the PvP frame "Join"; they already have the normal battleground
+            // join permission, so no extra RBAC grant is needed (the other subcommands stay GM only)
+            { "queue",  HandleQueueCommand,  rbac::RBAC_PERM_JOIN_NORMAL_BG, Console::No },
             { "start",  HandleStartCommand,  rbac::RBAC_PERM_COMMAND_DEBUG, Console::Yes },
             { "begin",  HandleBeginCommand,  rbac::RBAC_PERM_COMMAND_DEBUG, Console::Yes },
             { "stop",   HandleStopCommand,   rbac::RBAC_PERM_COMMAND_DEBUG, Console::Yes },
@@ -295,18 +297,25 @@ public:
         return commandTable;
     }
 
-    // .acherus queue - queues the selected player (or yourself), toggles if already queued
+    // .acherus queue - GM: queues the selected player (or yourself) and toggles; players reach it through the
+    // PvP frame "Join", so they only queue themselves and never toggle (the Leave Queue button still works)
     static bool HandleQueueCommand(ChatHandler* handler)
     {
-        Player* player = handler->getSelectedPlayerOrSelf();
+        bool isGm = handler->HasPermission(rbac::RBAC_PERM_COMMAND_DEBUG);
+
+        Player* player = isGm ? handler->getSelectedPlayerOrSelf() : handler->GetPlayer();
         if (!player)
             return false;
 
-        if (sAcherusOrbs->Dequeue(player->GetGUID()))
+        if (isGm && sAcherusOrbs->Dequeue(player->GetGUID()))
         {
             handler->SendSysMessage(Trinity::StringFormat("{} left the Acherus queue.", player->GetName()));
             return true;
         }
+
+        // a repeat click on Join is a no-op for players instead of an error
+        if (!isGm && sAcherusOrbs->IsQueued(player->GetGUID()))
+            return true;
 
         std::string error;
         if (!sAcherusOrbs->Enqueue(player, error))
@@ -316,7 +325,10 @@ public:
             return false;
         }
 
-        handler->SendSysMessage(Trinity::StringFormat("{} queued for Acherus.", player->GetName()));
+        if (isGm)
+            handler->SendSysMessage(Trinity::StringFormat("{} queued for Acherus.", player->GetName()));
+        else
+            handler->SendSysMessage("You queued for the battle for Acherus.");
         return true;
     }
 
