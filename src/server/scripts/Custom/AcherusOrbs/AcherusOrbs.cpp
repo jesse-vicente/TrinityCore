@@ -37,6 +37,8 @@
 #include "SpellAuras.h"
 #include "StringFormat.h"
 #include "TemporarySummon.h"
+#include "UpdateData.h"
+#include "UpdateMask.h"
 #include "Warden.h"
 #include "WorldSession.h"
 #include "WorldStatePackets.h"
@@ -67,6 +69,8 @@ namespace AcherusOrbs
         constexpr float SpiritGuideOffset = 3.0f;                   // spirit guide stands in front of the respawn point
         constexpr float SpiritHealerRange = 17.0f;                  // client AREA_SPIRIT_HEALER_IN_RANGE radius, measured in game
         constexpr float PortalRange = 3.0f;                         // radius of the Acherus teleporter aura (54724, SpellRadius 15)
+        constexpr float ForgeMaxHeight = 8.0f;                      // the upper floor is ~23 yards over the forges, inside their use range
+        constexpr uint32 ForgeLockedFlags = GO_FLAG_INTERACT_COND;  // usable only with GO_DYNFLAG_LO_ACTIVATE: the client shows the plain cursor
         constexpr float StairsPortalScale = 8.0f;
         // collision box of CollisionWallPvP01 (GameObjectModels.dtree) at scale 1: 11.08 yards along its local Y axis and
         // 17.56 high. Its only visible part is a thin checkered bar at its base (GameObjectDisplayInfo box: -0.36 to -0.07),
@@ -904,6 +908,9 @@ namespace AcherusOrbs
             Player* player = ObjectAccessor::FindConnectedPlayer(guid);
             if (!player)
             {
+                // the forges come back with their real flags when the client sees them again
+                matchPlayer.ForgesLocked = false;
+
                 // like battlegrounds, a disconnected player keeps his place for a while
                 if (matchPlayer.Offline)
                 {
@@ -920,6 +927,7 @@ namespace AcherusOrbs
             // a ghost may be sent to a graveyard; it is brought back by the resurrect wave
             if (player->GetMapId() != Ids::MapId)
             {
+                matchPlayer.ForgesLocked = false;
                 if (player->IsAlive())
                     left.push_back(guid);
                 continue;
@@ -927,6 +935,7 @@ namespace AcherusOrbs
 
             ApplyMatchState(match, player);
             UpdateRaid(match, matchPlayer, player);
+            UpdateForgeUsable(match, matchPlayer, player);
 
             if (!matchPlayer.WorldStatesSent)
             {
@@ -1927,17 +1936,72 @@ namespace AcherusOrbs
         if (!orb)
             return;
 
-        ChatHandler handler(player->GetSession());
         if (match->Status != MatchStatus::InProgress)
-            handler.SendSysMessage("The orbs are not active yet.");
+            SendUseError(player, "The orbs are not active yet.");
         else if (!player->IsAlive())
             return;
+        else if (IsAboveForges(player))
+            SendUseError(player, "You are too far away.");
         else if (!match->Orbs[*orb].Carrier.IsEmpty())
-            handler.SendSysMessage("This orb is already taken.");
+            SendUseError(player, "This orb is already taken.");
         else if (GetCarriedOrb(*match, player->GetGUID()))
-            handler.SendSysMessage("You can only carry one orb.");
+            SendUseError(player, "You can only carry one orb.");
         else
             PickUpOrb(*match, *orb, player);
+    }
+
+    // the forge use range reaches the upper floor through the ceiling of the hall
+    bool Manager::IsAboveForges(Player const* player)
+    {
+        return player->GetPositionZ() - OrbTemplates[0].ForgePosition.GetPositionZ() > ForgeMaxHeight;
+    }
+
+    // the client lights the use cursor on its own range check: from above, this player gets the forges as not
+    // usable. Only this client is told, through a values update of GAMEOBJECT_FLAGS built here
+    void Manager::UpdateForgeUsable(Match const& match, MatchPlayer& matchPlayer, Player* player)
+    {
+        bool const locked = IsAboveForges(player);
+        if (locked == matchPlayer.ForgesLocked)
+            return;
+
+        Map* map = player->GetMap();
+        UpdateData data;
+        for (OrbState const& state : match.Orbs)
+        {
+            GameObject* forge = map->GetGameObject(state.Forge);
+            if (!forge)
+                continue;
+
+            uint32 flags = forge->GetUInt32Value(GAMEOBJECT_FLAGS);
+            if (locked)
+                flags |= ForgeLockedFlags;
+
+            ByteBuffer& buffer = data.GetBuffer();
+            buffer << uint8(UPDATETYPE_VALUES);
+            buffer << forge->GetPackGUID();
+            UpdateMaskPacketBuilder mask(forge->GetValuesCount());
+            mask.SetBit(GAMEOBJECT_FLAGS);
+            mask.AppendToPacket(&buffer);
+            buffer << flags;
+            data.AddUpdateBlock();
+        }
+
+        if (!data.HasData())
+            return;
+
+        WorldPacket packet;
+        data.BuildPacket(&packet);
+        player->SendDirectMessage(&packet);
+        matchPlayer.ForgesLocked = locked;
+    }
+
+    // red text on the screen like the client's own errors when the UI listener is installed, else a notification
+    void Manager::SendUseError(Player* player, std::string const& text) const
+    {
+        if (_clientUiEnabled && !_clientScript.empty())
+            SendAddonMessage(player, Trinity::StringFormat("UIErrorsFrame:AddMessage('{}',1,0.1,0.1,1)", text));
+        else
+            player->GetSession()->SendNotification("%s", text.c_str());
     }
 
     void Manager::PickUpOrb(Match& match, OrbType orb, Player* player)

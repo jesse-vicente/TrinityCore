@@ -266,6 +266,7 @@ namespace AcherusOrbs
         bool HandledDeath = false;
         bool WorldStatesSent = false;
         bool Offline = false;
+        bool ForgesLocked = false;                                  // the forges were sent to this client as not usable
         uint32 OfflineTimer = 0;
         Optional<uint32> StatusSlot;                                // battlefield status slot used by the final score frame
         uint32 KillingBlows = 0;
@@ -424,6 +425,9 @@ namespace AcherusOrbs
         void SetForgeVisuals(Match& match, OrbType orb, bool on);
         static ObjectGuid SpawnForgeObject(Match const& match, Map* map, OrbTemplate const& orbTemplate, ForgeObjectTemplate const& objectTemplate);
         static ObjectGuid SummonForgeTrigger(Match const& match, Map* map, OrbTemplate const& orbTemplate, float scale);
+        static bool IsAboveForges(Player const* player);
+        static void UpdateForgeUsable(Match const& match, MatchPlayer& matchPlayer, Player* player);
+        void SendUseError(Player* player, std::string const& text) const;
         void PickUpOrb(Match& match, OrbType orb, Player* player);
         void DropOrb(Match& match, OrbType orb, bool announce);
         Optional<OrbType> GetCarriedOrb(Match const& match, ObjectGuid guid) const;
