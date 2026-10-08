@@ -55,7 +55,7 @@ namespace AcherusOrbs
     {{
         { "Frost",  "ff69ccf0", Ids::GoFrostForge,  { 2493.37f, -5642.43f, 420.863f,  2.16421f  }, QuaternionData(0.0f, 0.0f,  0.882948f, 0.469471f), 3.0f, { Spells::ForgeSpiritsFrost, 0, 0, 0, 0 }, {}, {{ { Spells::ForgeBeamFrost, 2.0f }, { Spells::ForgeIceboundFrost, 8.0f } }}, VisualKits::CarrierFrost,  { Spells::ForgeSpiritsFrost, Spells::CarrierAuraFrost } },
         { "Blood",  "ffff3030", Ids::GoBloodForge,  { 2427.28f, -5544.45f, 420.863f, -0.983229f }, QuaternionData(0.0f, 0.0f, -0.47205f,  0.881572f), 3.0f, { Spells::ForgeSpiritsBlood, Spells::ForgeHysteriaBlood, 0, 0, 0 }, {{ { Ids::GoPoolOfBlood, Ids::PoolOfBloodScale } }}, {{ { Spells::ForgeBeamBlood, 1.8f } }}, VisualKits::CarrierBlood,  { Spells::CarrierAuraBlood, Spells::ForgeSpiritsBlood } },
-        { "Unholy", "ff40ff40", Ids::GoUnholyForge, { 2509.31f, -5560.39f, 420.863f, -2.55402f  }, QuaternionData(0.0f, 0.0f, -0.957154f, 0.289578f), 5.0f, { Spells::ForgeSpiritsUnholyBase, Spells::ForgeSpiritsUnholy, 0, 0, 0 }, {{ { Ids::GoScourgeCircle, Ids::ScourgeCircleScale } }}, {{ { Spells::ForgePlagueUnholy, 1.0f }, { Spells::ForgeGhostStateUnholy, 1.0f } }}, VisualKits::CarrierUnholy, { Spells::ForgeSpiritsUnholyChest, Spells::ForgeSpiritsUnholy, Spells::CarrierAuraUnholy } }
+        { "Unholy", "ff40ff40", Ids::GoUnholyForge, { 2509.31f, -5560.39f, 420.863f, -2.55402f  }, QuaternionData(0.0f, 0.0f, -0.957154f, 0.289578f), 5.0f, { Spells::ForgeSpiritsUnholyBase, Spells::ForgeSpiritsUnholy, 0, 0, 0 }, {{ { Ids::GoScourgeCircle, Ids::ScourgeCircleScale }, { Ids::GoUnholyLight, Ids::UnholyLightScale } }}, {{ { Spells::ForgePlagueUnholy, 1.0f }, { Spells::ForgeGhostStateUnholy, 1.0f } }}, VisualKits::CarrierUnholy, { Spells::ForgeSpiritsUnholyChest, Spells::ForgeSpiritsUnholy, Spells::CarrierAuraUnholy } }
     }};
 
     namespace
@@ -66,6 +66,8 @@ namespace AcherusOrbs
         constexpr float PreparationDomeScale = 2.0f;               // Anti-Magic Zone is ~7 yards at scale 1
         constexpr uint8 PreparationWallCount = 8;                  // octagon around the dome
         constexpr float PreparationWallDistance = 10.0f;           // from the spawn to the middle of each wall, just inside the dome
+        constexpr float InstructionBookDistance = 6.0f;            // ahead of the spawn, beyond the preparation spirit guide
+        constexpr float InstructionBookHeight = 1.2f;              // above the floor, on top of the model's own float
         constexpr float HonorableKillRange = 40.0f;
         constexpr uint8 RequiredLevel = 80;
         constexpr float SpiritGuideOffset = 3.0f;                   // spirit guide stands in front of the respawn point
@@ -1566,6 +1568,8 @@ namespace AcherusOrbs
                 match.SpiritGuides[team][i] = SummonSpiritGuide(match, map, Positions::Respawn[team][i], TeamId(team));
             match.PreparationSpiritGuides[team] = SummonSpiritGuide(match, map, Positions::Spawn[team], TeamId(team));
             match.PreparationDomes[team] = SummonPreparationDome(match, map, Positions::Spawn[team]);
+            match.PreparationBooks[team] = SpawnInstructionBook(match, map, TeamId(team));
+            match.PreparationBookAuras[team] = SpawnBookAura(match, map, TeamId(team));
             SpawnPreparationWalls(match, map, Positions::Spawn[team]);
         }
 
@@ -1687,6 +1691,64 @@ namespace AcherusOrbs
         }
     }
 
+    // straight ahead of the spawn, on the floor and facing it
+    Position Manager::GetInstructionBookPosition(TeamId team)
+    {
+        Position const& spawn = Positions::Spawn[team];
+        float const angle = spawn.GetOrientation();
+        return Position(spawn.GetPositionX() + InstructionBookDistance * std::cos(angle),
+            spawn.GetPositionY() + InstructionBookDistance * std::sin(angle), spawn.GetPositionZ(),
+            Position::NormalizeOrientation(angle + float(M_PI)));
+    }
+
+    // a column of blue light rising from the floor under the book
+    ObjectGuid Manager::SpawnBookAura(Match const& match, Map* map, TeamId team)
+    {
+        Position const position = GetInstructionBookPosition(team);
+
+        GameObject* aura = new GameObject();
+        if (!aura->Create(map->GenerateLowGuid<HighGuid::GameObject>(), Ids::GoBookAura, map, match.PhaseMask, position,
+            QuaternionData::fromEulerAnglesZYX(position.GetOrientation(), 0.0f, 0.0f), 255, GO_STATE_READY))
+        {
+            TC_LOG_ERROR("scripts", "AcherusOrbs: cannot create book aura gameobject {} for match {}", Ids::GoBookAura, match.Id);
+            delete aura;
+            return ObjectGuid::Empty;
+        }
+
+        aura->setActive(true);
+        if (!map->AddToMap(aura))
+        {
+            delete aura;
+            return ObjectGuid::Empty;
+        }
+
+        return aura->GetGUID();
+    }
+
+    ObjectGuid Manager::SpawnInstructionBook(Match const& match, Map* map, TeamId team)
+    {
+        Position position = GetInstructionBookPosition(team);
+        position.m_positionZ += InstructionBookHeight;
+
+        GameObject* book = new GameObject();
+        if (!book->Create(map->GenerateLowGuid<HighGuid::GameObject>(), Ids::GoInstructionBook, map, match.PhaseMask, position,
+            QuaternionData::fromEulerAnglesZYX(position.GetOrientation(), 0.0f, 0.0f), 255, GO_STATE_READY))
+        {
+            TC_LOG_ERROR("scripts", "AcherusOrbs: cannot create instruction book gameobject {} for match {}", Ids::GoInstructionBook, match.Id);
+            delete book;
+            return ObjectGuid::Empty;
+        }
+
+        book->setActive(true);
+        if (!map->AddToMap(book))
+        {
+            delete book;
+            return ObjectGuid::Empty;
+        }
+
+        return book->GetGUID();
+    }
+
     // one invisible collision wall facing the position's orientation, so it extends across it
     ObjectGuid Manager::SpawnWall(Match const& match, Map* map, Position const& position, float scale /*= 0.0f*/)
     {
@@ -1767,6 +1829,16 @@ namespace AcherusOrbs
     {
         for (ObjectGuid& guid : match.PreparationDomes)
             DespawnCreature(map, guid);
+
+        for (std::array<ObjectGuid, PVP_TEAMS_COUNT>* objects : { &match.PreparationBooks, &match.PreparationBookAuras })
+        {
+            for (ObjectGuid& guid : *objects)
+            {
+                if (GameObject* object = map->GetGameObject(guid))
+                    object->Delete();
+                guid.Clear();
+            }
+        }
 
         for (ObjectGuid const& guid : match.PreparationWalls)
         {

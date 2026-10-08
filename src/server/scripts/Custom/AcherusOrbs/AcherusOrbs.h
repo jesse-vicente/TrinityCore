@@ -68,9 +68,13 @@ namespace AcherusOrbs
         static constexpr uint32 GoPortal = 191539;                   // Doodad_Nox_portal_purple_bossroom17, the Acherus portal by the door (outside the match phases)
         static constexpr uint32 GoPreparationWall = 990005;          // invisible PvP collision wall (display of 180322), rings the preparation domes
         static constexpr uint32 GoPoolOfBlood = 990006;              // generic copy of the Pool of Blood fishing hole (194479), on the Blood forge
+        static constexpr uint32 GoInstructionBook = 990007;          // floating Lexicon of Power (193981) with the instructions, in each starting area
+        static constexpr uint32 GoBookAura = 990008;                 // blue aura column (display of 2904) under each instruction book
         static constexpr float PoolOfBloodScale = 3.0f;              // small puddle, hidden under the forge at its template size (0.75)
         static constexpr uint32 GoScourgeCircle = 191206;            // SC_CastingCircle_01, on the Unholy forge
         static constexpr float ScourgeCircleScale = 1.4f;
+        static constexpr uint32 GoUnholyLight = 990009;              // green aura column (display of 148883) on the Unholy forge
+        static constexpr float UnholyLightScale = 10.0f;             // template size 3.5, raised to match the forge
     }
 
     namespace Spells
@@ -371,6 +375,8 @@ namespace AcherusOrbs
         std::array<std::array<ObjectGuid, Positions::RespawnCount>, PVP_TEAMS_COUNT> SpiritGuides;
         std::array<ObjectGuid, PVP_TEAMS_COUNT> PreparationSpiritGuides;
         std::array<ObjectGuid, PVP_TEAMS_COUNT> PreparationDomes;
+        std::array<ObjectGuid, PVP_TEAMS_COUNT> PreparationBooks;
+        std::array<ObjectGuid, PVP_TEAMS_COUNT> PreparationBookAuras;
         std::vector<ObjectGuid> PreparationWalls;
         ObjectGuid Portal;
         std::array<BerserkBuffState, Positions::BerserkBuffCount> BerserkBuffs;
@@ -458,6 +464,9 @@ namespace AcherusOrbs
         static ObjectGuid SummonSpiritGuide(Match const& match, Map* map, Position const& graveyard, TeamId team);
         static ObjectGuid SummonPreparationDome(Match const& match, Map* map, Position const& center);
         static void SpawnPreparationWalls(Match& match, Map* map, Position const& center);
+        static Position GetInstructionBookPosition(TeamId team);
+        static ObjectGuid SpawnInstructionBook(Match const& match, Map* map, TeamId team);
+        static ObjectGuid SpawnBookAura(Match const& match, Map* map, TeamId team);
         static ObjectGuid SpawnWall(Match const& match, Map* map, Position const& position, float scale = 0.0f);
         static void SpawnStairsBarrier(Match& match, Map* map);
         static ObjectGuid SummonStairsPortal(Match const& match, Map* map);

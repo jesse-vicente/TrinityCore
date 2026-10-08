@@ -39,3 +39,33 @@ INSERT INTO `gameobject_template` (`entry`, `type`, `displayId`, `name`, `IconNa
 DELETE FROM `gameobject_template_addon` WHERE `entry` = 990006;
 INSERT INTO `gameobject_template_addon` (`entry`, `faction`, `flags`) VALUES
 (990006, 0, 16); -- GO_FLAG_NOT_SELECTABLE
+
+-- Instruction book in each starting area during the preparation, spawned per match by the script: a text object with
+-- the floating Lexicon of Power model (193981). Instructions are in Portuguese, like the other information texts of
+-- the server; the battleground UI and messages stay in English.
+DELETE FROM `gameobject_template` WHERE `entry` = 990007;
+INSERT INTO `gameobject_template` (`entry`, `type`, `displayId`, `name`, `IconName`, `castBarCaption`, `unk1`, `size`, `Data0`, `Data1`, `Data2`, `Data3`) VALUES
+(990007, 9, 8520, 'O Coração de Acherus', '', '', '', 2.5, 990000, 0, 2, 1); -- Data2 2 = Stone page material
+
+DELETE FROM `page_text` WHERE `ID` IN (990000, 990001);
+INSERT INTO `page_text` (`ID`, `Text`, `NextPageID`) VALUES
+(990000, 'O Coração de Acherus\n\nAs três Forjas Rúnicas de Acherus guardam Runas de poder. Clique em uma Forja para tomar a sua Runa.\n\nEnquanto você estiver vivo com uma Runa, seu time ganha pontos a cada 5 segundos:\n- 6 no Fosso Central\n- 4 na plataforma das Forjas\n- 2 fora do salão\n\nCada inimigo abatido vale mais 10 pontos.\n\nVence o primeiro time a chegar a 1600 pontos. Após 25 minutos, vence quem tiver mais.', 990001),
+(990001, 'O preço do poder\n\nA cada 15 segundos a Runa fortalece quem a carrega: mais dano causado, porém mais dano recebido e menos cura recebida.\n\nCada jogador carrega apenas uma Runa. Ao tomá-la, você é desmontado e sai da furtividade.\n\nSe você morrer, a Runa volta para a sua Forja.\n\nO portal junto à porta leva ao andar superior, e o salão guarda dois buffs de Berserk.\n\nBoa sorte, e que a Lâmina de Ébano lembre do seu nome.', 0);
+
+-- Blue aura column under each instruction book (display of 2904, AuraBlueTall), spawned per match by the script.
+-- Scenery only: generic object without a name, not selectable.
+DELETE FROM `gameobject_template` WHERE `entry` = 990008;
+INSERT INTO `gameobject_template` (`entry`, `type`, `displayId`, `name`, `IconName`, `castBarCaption`, `unk1`, `size`) VALUES
+(990008, 5, 298, '', '', '', '', 2);
+DELETE FROM `gameobject_template_addon` WHERE `entry` = 990008;
+INSERT INTO `gameobject_template_addon` (`entry`, `faction`, `flags`) VALUES
+(990008, 0, 16); -- GO_FLAG_NOT_SELECTABLE
+
+-- Green aura column on the Unholy forge (display of 148883, AuraGreenVeryTall), spawned with the forge visuals by the
+-- script and scaled there. Scenery only: generic object without a name, not selectable.
+DELETE FROM `gameobject_template` WHERE `entry` = 990009;
+INSERT INTO `gameobject_template` (`entry`, `type`, `displayId`, `name`, `IconName`, `castBarCaption`, `unk1`, `size`) VALUES
+(990009, 5, 2473, '', '', '', '', 3.5);
+DELETE FROM `gameobject_template_addon` WHERE `entry` = 990009;
+INSERT INTO `gameobject_template_addon` (`entry`, `faction`, `flags`) VALUES
+(990009, 0, 16); -- GO_FLAG_NOT_SELECTABLE
