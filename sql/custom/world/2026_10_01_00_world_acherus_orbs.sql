@@ -47,10 +47,13 @@ DELETE FROM `gameobject_template` WHERE `entry` = 990007;
 INSERT INTO `gameobject_template` (`entry`, `type`, `displayId`, `name`, `IconName`, `castBarCaption`, `unk1`, `size`, `Data0`, `Data1`, `Data2`, `Data3`) VALUES
 (990007, 9, 8520, 'O Coração de Acherus', '', '', '', 2.5, 990000, 0, 2, 1); -- Data2 2 = Stone page material
 
+-- The pages are the client's SimpleHTML: P, align, BR and |c colors render; H1 only gets a bigger font from the
+-- client UI script (otherwise it looks like a P), and IMG or |T icons do not render at all. The blank lines under
+-- the first title leave room for the row of rune icons the client UI script draws there.
 DELETE FROM `page_text` WHERE `ID` IN (990000, 990001);
 INSERT INTO `page_text` (`ID`, `Text`, `NextPageID`) VALUES
-(990000, 'O Coração de Acherus\n\nAs três Forjas Rúnicas de Acherus guardam Runas de poder. Clique em uma Forja para tomar a sua Runa.\n\nEnquanto você estiver vivo com uma Runa, seu time ganha pontos a cada 5 segundos:\n- 6 no Fosso Central\n- 4 na plataforma das Forjas\n- 2 fora do salão\n\nCada inimigo abatido vale mais 10 pontos.\n\nVence o primeiro time a chegar a 1600 pontos. Após 25 minutos, vence quem tiver mais.', 990001),
-(990001, 'O preço do poder\n\nA cada 15 segundos a Runa fortalece quem a carrega: mais dano causado, porém mais dano recebido e menos cura recebida.\n\nCada jogador carrega apenas uma Runa. Ao tomá-la, você é desmontado e sai da furtividade.\n\nSe você morrer, a Runa volta para a sua Forja.\n\nO portal junto à porta leva ao andar superior, e o salão guarda dois buffs de Berserk.\n\nBoa sorte, e que a Lâmina de Ébano lembre do seu nome.', 0);
+(990000, '<HTML>\n<BODY>\n<H1 align="center">|cffffd100O Coração de Acherus|r</H1>\n<BR/>\n<BR/>\n<P>As forjas rúnicas de Acherus guardam 3 runas de poder: |cffff3030Blood|r, |cff69ccf0Frost|r e |cff40ff40Unholy|r. Clique em uma forja para tomar a sua runa.</P>\n<BR/>\n<P>Enquanto carregar uma runa, seu time ganha pontos a cada 5 segundos:<BR/><BR/>+6 no fosso central<BR/>+4 na plataforma das forjas<BR/>+2 no segundo piso e fora do salão<BR/><BR/>Cada inimigo abatido vale +10 pontos.</P>\n<BR/>\n<P>Vence quem chegar primeiro a 1600 pontos ou, após 25 minutos, quem tiver mais.</P>\n<BR/>\n</BODY>\n</HTML>', 990001),
+(990001, '<HTML>\n<BODY>\n<H1 align="center">|cffffd100O Preço do Poder|r</H1>\n<BR/>\n<P>A cada 15 segundos a runa fortalece quem a carrega: mais dano causado, porém mais dano recebido e menos cura recebida.</P>\n<BR/>\n<P>Cada jogador pode carregar apenas uma runa. Se você morrer, a runa volta para a sua forja.</P>\n<BR/>\n<P>O portal junto à porta leva ao andar superior e o salão guarda dois buffs de Berserk.</P>\n<BR/>\n<P>Boa sorte! Que a Lâmina de Ébano lembre do seu nome.</P>\n<BR/>\n</BODY>\n</HTML>', 0);
 
 -- Blue aura column under each instruction book (display of 2904, AuraBlueTall), spawned per match by the script.
 -- Scenery only: generic object without a name, not selectable.

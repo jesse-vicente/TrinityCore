@@ -66,11 +66,11 @@ namespace AcherusOrbs
         constexpr float PreparationDomeScale = 2.0f;               // Anti-Magic Zone is ~7 yards at scale 1
         constexpr uint8 PreparationWallCount = 8;                  // octagon around the dome
         constexpr float PreparationWallDistance = 10.0f;           // from the spawn to the middle of each wall, just inside the dome
-        constexpr float InstructionBookDistance = 6.0f;            // ahead of the spawn, beyond the preparation spirit guide
+        constexpr float InstructionBookDistance = 6.0f;            // ahead of the spawn
         constexpr float InstructionBookHeight = 1.2f;              // above the floor, on top of the model's own float
         constexpr float HonorableKillRange = 40.0f;
         constexpr uint8 RequiredLevel = 80;
-        constexpr float SpiritGuideOffset = 3.0f;                   // spirit guide stands in front of the respawn point
+        constexpr float SpiritGuideOffset = 3.0f;                   // graveyard spirit guides stand in front of the respawn point, the starting area ones on the spawn
         constexpr float SpiritHealerRange = 17.0f;                  // client AREA_SPIRIT_HEALER_IN_RANGE radius, measured in game
         constexpr float PortalRange = 3.0f;                         // radius of the Acherus teleporter aura (54724, SpellRadius 15)
         constexpr float AmbientCreatureRadius = 150.0f;            // map 0 spawns this close to the hall belong to the floating Acherus
@@ -1565,8 +1565,8 @@ namespace AcherusOrbs
         for (uint8 team = 0; team < PVP_TEAMS_COUNT; ++team)
         {
             for (std::size_t i = 0; i < Positions::RespawnCount; ++i)
-                match.SpiritGuides[team][i] = SummonSpiritGuide(match, map, Positions::Respawn[team][i], TeamId(team));
-            match.PreparationSpiritGuides[team] = SummonSpiritGuide(match, map, Positions::Spawn[team], TeamId(team));
+                match.SpiritGuides[team][i] = SummonSpiritGuide(match, map, Positions::Respawn[team][i], TeamId(team), SpiritGuideOffset);
+            match.PreparationSpiritGuides[team] = SummonSpiritGuide(match, map, Positions::Spawn[team], TeamId(team), 0.0f);
             match.PreparationDomes[team] = SummonPreparationDome(match, map, Positions::Spawn[team]);
             match.PreparationBooks[team] = SpawnInstructionBook(match, map, TeamId(team));
             match.PreparationBookAuras[team] = SpawnBookAura(match, map, TeamId(team));
@@ -1635,10 +1635,10 @@ namespace AcherusOrbs
         return creature->GetGUID();
     }
 
-    ObjectGuid Manager::SummonSpiritGuide(Match const& match, Map* map, Position const& graveyard, TeamId team)
+    ObjectGuid Manager::SummonSpiritGuide(Match const& match, Map* map, Position const& graveyard, TeamId team, float offset)
     {
-        Position const position(graveyard.GetPositionX() + SpiritGuideOffset * std::cos(graveyard.GetOrientation()),
-            graveyard.GetPositionY() + SpiritGuideOffset * std::sin(graveyard.GetOrientation()), graveyard.GetPositionZ(), graveyard.GetOrientation());
+        Position const position(graveyard.GetPositionX() + offset * std::cos(graveyard.GetOrientation()),
+            graveyard.GetPositionY() + offset * std::sin(graveyard.GetOrientation()), graveyard.GetPositionZ(), graveyard.GetOrientation());
 
         uint32 const entry = team == TEAM_ALLIANCE ? Ids::NpcSpiritGuideAlliance : Ids::NpcSpiritGuideHorde;
         TempSummon* guide = map->SummonCreature(entry, position);

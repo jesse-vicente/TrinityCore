@@ -825,6 +825,127 @@ function AcherusBG_Orbs.Update(px, py, fx, fy, fName, bx, by, bName, ux, uy, uNa
     }
 end
 
+-- ---------------------------------------------------------------------------- instruction book
+-- The book of each starting area is a page text gameobject, shown by ItemTextFrame. Its page is a SimpleHTML that
+-- has no font for H1, so the title looks like any paragraph, and it cannot draw icons. While our book is open the
+-- H1 gets a bigger copy of the page font, and a row of death knight runes is drawn under the title of the first
+-- page (the page leaves blank lines for it). Any other book gets the page font back for H1.
+
+-- the gameobject name (O Coracao de Acherus with its accents) in UTF-8 bytes, so this file stays ASCII
+local BOOK_NAME = "O Cora\195\167\195\163o de Acherus"
+local BOOK_TITLE_SCALE = 1.6
+-- same order as the rune names in the page: Blood, Frost, Unholy
+local BOOK_RUNE_TEXTURES = {
+    "Interface\\PlayerFrame\\UI-PlayerFrame-Deathknight-Blood",
+    "Interface\\PlayerFrame\\UI-PlayerFrame-Deathknight-Frost",
+    "Interface\\PlayerFrame\\UI-PlayerFrame-Deathknight-Unholy",
+}
+-- in page font lines: icon size and gap from the title to the top of the icons
+local BOOK_RUNE_ICON_LINES = 1.8
+local BOOK_RUNE_ICON_GAP = 1.0
+-- distance between the icon centers, in icon sizes
+local BOOK_RUNE_ICON_SPACING = 1.6
+
+local bookRunes
+
+-- the page font: the SimpleHTML may not report it, so fall back to the ItemTextFontNormal font object, then Morpheus 15
+local function BookPageFont()
+    local font, size, flags
+    if ItemTextPageText.GetFont then
+        local ok
+        ok, font, size, flags = pcall(ItemTextPageText.GetFont, ItemTextPageText)
+        if not ok then
+            font = nil
+        end
+    end
+    if (not font or not size) and ItemTextFontNormal then
+        font, size, flags = ItemTextFontNormal:GetFont()
+    end
+    if not font or not size then
+        font, size, flags = "Fonts\\MORPHEUS.TTF", 15, ""
+    end
+    return font, size, flags or ""
+end
+
+local function IsAcherusBook()
+    return ItemTextGetItem and ItemTextGetItem() == BOOK_NAME
+end
+
+local bookTitleFont
+local bookPlainFont
+
+-- set on ITEM_TEXT_BEGIN, before ItemTextFrame lays out the page on ITEM_TEXT_READY; tries the SimpleHTML element
+-- font first, then a font object for the element
+local function SetBookTitleFont()
+    local font, size, flags = BookPageFont()
+    local titleSize = IsAcherusBook() and size * BOOK_TITLE_SCALE or size
+    if pcall(ItemTextPageText.SetFont, ItemTextPageText, "h1", font, titleSize, flags) then
+        return
+    end
+
+    if not bookTitleFont then
+        bookTitleFont = CreateFont("AcherusBookTitleFont")
+        bookPlainFont = CreateFont("AcherusBookPlainFont")
+    end
+    bookTitleFont:SetFont(font, size * BOOK_TITLE_SCALE, flags)
+    bookPlainFont:SetFont(font, size, flags)
+    ItemTextPageText:SetFontObject("h1", IsAcherusBook() and bookTitleFont or bookPlainFont)
+end
+
+local function BookRunes()
+    if not bookRunes then
+        bookRunes = CreateFrame("Frame", nil, ItemTextPageText)
+        bookRunes:SetAllPoints(ItemTextPageText)
+        bookRunes:SetFrameLevel(ItemTextPageText:GetFrameLevel() + 2)
+        bookRunes.icons = {}
+        for i, texture in ipairs(BOOK_RUNE_TEXTURES) do
+            local icon = bookRunes:CreateTexture(nil, "OVERLAY")
+            icon:SetTexture(texture)
+            bookRunes.icons[i] = icon
+        end
+    end
+    return bookRunes
+end
+
+-- the row is centered on the page, right under the title
+local function ShowBookRunes()
+    local _, size = BookPageFont()
+    local frame = BookRunes()
+    local iconSize = size * BOOK_RUNE_ICON_LINES
+    local spacing = iconSize * BOOK_RUNE_ICON_SPACING
+    local top = size * BOOK_TITLE_SCALE + size * BOOK_RUNE_ICON_GAP
+    local first = ItemTextPageText:GetWidth() / 2 - spacing * (#frame.icons - 1) / 2
+    for i, icon in ipairs(frame.icons) do
+        icon:ClearAllPoints()
+        icon:SetWidth(iconSize)
+        icon:SetHeight(iconSize)
+        icon:SetPoint("TOP", frame, "TOPLEFT", first + spacing * (i - 1), -top)
+    end
+    frame:Show()
+end
+
+local function UpdateBook(event)
+    if event == "ITEM_TEXT_BEGIN" then
+        SetBookTitleFont()
+    end
+
+    if event == "ITEM_TEXT_READY" and IsAcherusBook() and ItemTextGetPage() == 1 then
+        ShowBookRunes()
+    elseif bookRunes then
+        bookRunes:Hide()
+    end
+end
+
+if ItemTextPageText then
+    local bookWatcher = CreateFrame("Frame")
+    bookWatcher:RegisterEvent("ITEM_TEXT_BEGIN")
+    bookWatcher:RegisterEvent("ITEM_TEXT_READY")
+    bookWatcher:RegisterEvent("ITEM_TEXT_CLOSED")
+    bookWatcher:SetScript("OnEvent", function(self, event)
+        pcall(UpdateBook, event)
+    end)
+end
+
 -- Tell the worldserver the script was applied, so it can log it (and stop pinging this client).
 -- The body is valid Lua: it would stay a harmless no-op if the message were ever echoed back.
 SendAddonMessage('AcherusBG', 'return 2', 'GUILD')

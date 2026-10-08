@@ -461,7 +461,7 @@ namespace AcherusOrbs
 
         void SpawnObjects(Match& match, Map* map);
         void DespawnObjects(Match& match, Map* map);
-        static ObjectGuid SummonSpiritGuide(Match const& match, Map* map, Position const& graveyard, TeamId team);
+        static ObjectGuid SummonSpiritGuide(Match const& match, Map* map, Position const& graveyard, TeamId team, float offset);
         static ObjectGuid SummonPreparationDome(Match const& match, Map* map, Position const& center);
         static void SpawnPreparationWalls(Match& match, Map* map, Position const& center);
         static Position GetInstructionBookPosition(TeamId team);
