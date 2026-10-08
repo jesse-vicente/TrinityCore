@@ -238,9 +238,24 @@ local ACHERUS_BG_LORE =
 local OrigGetNumBattlegroundTypes = GetNumBattlegroundTypes
 local OrigGetBattlegroundInfo = GetBattlegroundInfo
 
--- our synthetic entry is appended after every real type (its index follows the sorted DBC list)
+-- our synthetic entry is inserted second in the list, right after the Random Battleground (the first one after
+-- SortBGList). The list only hands its indices to GetBattlegroundInfo and RequestBattlegroundInstanceInfo
+-- (PVPBattlegroundFrame.lua), so both translate them: the real types after ours are shifted by one.
+local ACHERUS_BG_POSITION = 2
+
 local function AcherusBGIndex()
-    return (OrigGetNumBattlegroundTypes and OrigGetNumBattlegroundTypes() or 0) + 1
+    return math.min(ACHERUS_BG_POSITION, (OrigGetNumBattlegroundTypes and OrigGetNumBattlegroundTypes() or 0) + 1)
+end
+
+-- the client index of a list index, nil for our entry
+local function RealBGIndex(index)
+    local ours = AcherusBGIndex()
+    if type(index) ~= "number" or index < ours then
+        return index
+    elseif index == ours then
+        return nil
+    end
+    return index - 1
 end
 
 if OrigGetNumBattlegroundTypes and OrigGetBattlegroundInfo then
@@ -248,11 +263,23 @@ if OrigGetNumBattlegroundTypes and OrigGetBattlegroundInfo then
         return OrigGetNumBattlegroundTypes() + 1
     end
     GetBattlegroundInfo = function(index)
-        if index == AcherusBGIndex() then
+        local real = RealBGIndex(index)
+        if not real then
             -- name, canEnter, isHoliday, isRandom, BattleGroundID (an id outside PVPBATTLEGROUND_TEXTURELIST)
             return TITLE, true, false, false, 999
         end
-        return OrigGetBattlegroundInfo(index)
+        return OrigGetBattlegroundInfo(real)
+    end
+end
+
+-- our entry has no client instance info to request; the Join buttons send the module command for it
+local OrigRequestBattlegroundInstanceInfo = RequestBattlegroundInstanceInfo
+if OrigRequestBattlegroundInstanceInfo then
+    RequestBattlegroundInstanceInfo = function(index)
+        local real = RealBGIndex(index)
+        if real then
+            return OrigRequestBattlegroundInstanceInfo(real)
+        end
     end
 end
 
@@ -340,6 +367,54 @@ end
 
 if PVPBattleground_UpdateQueueStatus then
     hooksecurefunc("PVPBattleground_UpdateQueueStatus", AcherusQueueStatus)
+end
+
+-- "NEW" badge right after the name of our row. The list recycles its row buttons while scrolling, so on every
+-- update the badge is moved to whichever row shows our entry, or hidden when it is scrolled out of view.
+local NEW_BADGE_TEXT = "NEW"
+
+local function RowNameText(row)
+    local text = row.title or (row.GetFontString and row:GetFontString())
+    if not text and row.GetName and row:GetName() then
+        text = _G[row:GetName() .. "Text"]
+    end
+    return text
+end
+
+-- each row gets its own badge (created once); only the row showing our entry shows it
+local function AcherusNewBadge()
+    for i = 1, (NUM_DISPLAYED_BATTLEGROUNDS or 5) do
+        local row = _G["BattlegroundType" .. i]
+        if row then
+            local name = RowNameText(row)
+            local ours = name and row:IsShown() and row.BGindex == AcherusBGIndex()
+            if ours and not row.acherusNewBadge then
+                local badge = row:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+                badge:SetText(NEW_BADGE_TEXT)
+                badge:SetTextColor(0.25, 1.0, 0.25)
+                row.acherusNewBadge = badge
+            end
+
+            local badge = row.acherusNewBadge
+            if badge then
+                if ours then
+                    -- the name FontString can be wider than its text, so the badge follows the text width
+                    badge:ClearAllPoints()
+                    badge:SetPoint("LEFT", name, "LEFT", name:GetStringWidth() + 6, 0)
+                    badge:Show()
+                else
+                    badge:Hide()
+                end
+            end
+        end
+    end
+end
+
+if PVPBattleground_UpdateQueueStatus then
+    hooksecurefunc("PVPBattleground_UpdateQueueStatus", AcherusNewBadge)
+end
+if PVPBattleground_UpdateBattlegrounds then
+    hooksecurefunc("PVPBattleground_UpdateBattlegrounds", AcherusNewBadge)
 end
 
 -- the native Join queues "first available"; for our entry send the module command instead
