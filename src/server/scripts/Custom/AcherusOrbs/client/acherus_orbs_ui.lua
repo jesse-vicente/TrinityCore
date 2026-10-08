@@ -1,4 +1,4 @@
--- Battle for Acherus: client-side UI relabels.
+-- Heart of Acherus: client-side UI relabels.
 --
 -- Pushed by the worldserver through Warden (bootstrap listener) + addon messages, see the module README.
 -- Runs in the client global environment via loadstring. Keep it idempotent: the AcherusBG_UI guard prevents a
@@ -8,10 +8,10 @@
 if AcherusBG_UI then return end
 AcherusBG_UI = { active = false }
 
-local TITLE = "Battle for Acherus"
+local TITLE = "Heart of Acherus"
 
 -- The battleground name is localized (BattlemasterList.dbc), so we never hardcode "Eye of the Storm": we ask
--- the client for it through the same API the UI uses. The server fakes the Acherus match as the Eye of the
+-- the client for it through the same API the UI uses. The server fakes the Heart of Acherus match as the Eye of the
 -- Storm, so GetBattlefieldStatus returns the very name the minimap, the dropdown and the list display.
 local function LocalizedAcherusName()
     local fallback
@@ -27,7 +27,7 @@ local function LocalizedAcherusName()
     return fallback
 end
 
--- The server only turns the relabel on while the player is in the Acherus queue or match (AcherusBG_UI.active).
+-- The server only turns the relabel on while the player is in the Heart of Acherus queue or match (AcherusBG_UI.active).
 -- Belt-and-suspenders: never touch the real Eye of the Storm instance, even if a toggle was missed. The name
 -- comparison uses the localized name above, so it holds on every client locale.
 local function IsRealEyeOfTheStorm()
@@ -42,7 +42,7 @@ end
 -- The scoreboard stat column comes from GetBattlefieldStatInfo (localized text, tooltip and the Eye of the
 -- Storm flag icon). Swap it for our own column while the relabel is active: the empty icon makes the client
 -- draw the plain number (no flag, no "x") and the header uses our label and tooltip.
-local ORB_POINTS_TOOLTIP = "Points earned by holding orbs and killing enemies."
+local ORB_POINTS_TOOLTIP = "Points earned by holding runes and killing enemies."
 
 if GetBattlefieldStatInfo then
     local OrigBattlefieldStatInfo = GetBattlefieldStatInfo
@@ -160,7 +160,7 @@ local function FixAlwaysUp()
         if fs and fs.GetText and fs.SetText then
             local text = fs:GetText()
             if type(text) == "string" and string.find(text, ":", 1, true) then
-                fs:SetText((string.gsub(text, "^.-:", "Orbs:", 1)))
+                fs:SetText((string.gsub(text, "^.-:", "Runes:", 1)))
             end
         end
     end
@@ -226,7 +226,7 @@ watcher:SetScript("OnEvent", RelabelAll)
 -- so a custom mode the client has no type for cannot come from the server. Expose one synthetic entry by
 -- wrapping the two APIs that list reads (GetNumBattlegroundTypes/GetBattlegroundInfo): the native update then
 -- counts it, draws its row and includes it in the scroll range like any other battleground, so it scrolls
--- with the list. The Eye of the Storm type is the one the server fakes the Acherus match with, so the queue
+-- with the list. The Eye of the Storm type is the one the server fakes the Heart of Acherus match with, so the queue
 -- icon must be moved from that row to ours.
 
 local ACHERUS_BG_TEXTURE = "Interface\\PVPFrame\\PvpRandomBg" -- the same art the Random Battleground uses
@@ -448,8 +448,8 @@ if PVPBattlegroundFrame and PVPBattlegroundFrame.HookScript then
     end)
 end
 
--- ---------------------------------------------------------------------------- orb carrier auras
--- The server applies a visible "Portal State" dummy aura to each orb carrier (33338 red/Blood, 33339
+-- ---------------------------------------------------------------------------- rune carrier auras
+-- The server applies a visible "Portal State" dummy aura to each rune carrier (33338 red/Blood, 33339
 -- green/Unholy, 33340 blue/Frost). All three share the same DBC icon, so they are told apart by the
 -- (localized) spell name queried once from the client, then relabeled with death knight icons. This keeps
 -- a death knight from ending up with two identical presence icons in the aura bar.
@@ -457,14 +457,14 @@ end
 local ORB_ICON_BLOOD = "Interface\\Icons\\Spell_Deathknight_BladedArmor"
 local ORB_ICON_UNHOLY = "Interface\\Icons\\Spell_Deathknight_EmpowerRuneblade"
 local ORB_ICON_FROST = "Interface\\Icons\\Spell_Deathknight_EmpowerRuneblade2"
-local ORB_DESC = "Carrying an orb from the runeforges of Acherus."
+local ORB_DESC = "Carrying a rune from the runeforges of Acherus."
 
 local ORB_AURAS = {}
 do
     local defs = {
-        { 33338, "Blood Orb", ORB_ICON_BLOOD },
-        { 33339, "Unholy Orb", ORB_ICON_UNHOLY },
-        { 33340, "Frost Orb", ORB_ICON_FROST },
+        { 33338, "Blood Rune", ORB_ICON_BLOOD },
+        { 33339, "Unholy Rune", ORB_ICON_UNHOLY },
+        { 33340, "Frost Rune", ORB_ICON_FROST },
     }
     for _, def in ipairs(defs) do
         local spellName = GetSpellInfo(def[1])
@@ -478,7 +478,7 @@ do
     end
 end
 
--- the orb aura is always a helpful buff, so the buff list works for every frame (a filter-less UnitAura
+-- the rune aura is always a helpful buff, so the buff list works for every frame (a filter-less UnitAura
 -- would not necessarily match the index the frame used). The count is the stack amount the server keeps on
 -- the portal aura (its charges, since the portal is not stackable in the DBC).
 local function OrbAuraFor(unit, index)
@@ -578,7 +578,7 @@ local function OrbTooltip(self, unit, index)
     self:AddLine(ORB_DESC, 1, 1, 1)
     self:AddLine(string.format("Damage done: +%d%%", math.min(100, 20 * stacks)), 1, 1, 1)
     self:AddLine(string.format("Damage taken: +%d%%", math.min(100, 20 * stacks)), 1, 1, 1)
-    self:AddLine(string.format("Healing taken: -%d%%", math.min(50, 10 * stacks)), 1, 1, 1)
+    self:AddLine(string.format("Healing received: -%d%%", math.min(50, 10 * stacks)), 1, 1, 1)
     self:AddLine(string.format("Size: +%d%%", math.min(100, 20 + 20 * (stacks - 1))), 1, 1, 1)
     self:AddLine(string.format("(%d stack%s, +1 every 15 sec)", stacks, stacks == 1 and "" or "s"), 1, 1, 1)
     self:Show()
@@ -647,7 +647,7 @@ if RelabelBase then
     end
 end
 
--- ---------------------------------------------------------------------------- minimap orb markers
+-- ---------------------------------------------------------------------------- minimap rune markers
 -- The server pushes AcherusBG_Orbs.Update(px, py, x, y, name, ...) every 0.25 s through the same addon
 -- message channel. Positions are world coordinates (yards). The Ebon Hold world map is rotated 90 degrees
 -- and mirrored on the minimap (its X comes from the world Y, its Y from the world X), so a world offset
@@ -698,7 +698,7 @@ local function HideOrbMarkers()
     end
 end
 
--- a same team orb carrier is a battlefield raid member: find its unit token by name so the marker can
+-- a same team rune carrier is a battlefield raid member: find its unit token by name so the marker can
 -- follow GetPlayerMapPosition (smooth) instead of the 0.25 s server updates
 local function FindUnitByName(name)
     if not name or name == "" then
@@ -806,7 +806,7 @@ orbDriver:SetScript("OnUpdate", function()
 end)
 orbDriver:Show()
 
--- Called by the server every 0.25 s with the player position (the anchor) and each orb's position, plus
+-- Called by the server every 0.25 s with the player position (the anchor) and each rune's position, plus
 -- (for a carrier of the observer's team) its name so the client can follow that unit smoothly.
 function AcherusBG_Orbs.Update(px, py, fx, fy, fName, bx, by, bName, ux, uy, uName)
     local function Store(x, y, name)

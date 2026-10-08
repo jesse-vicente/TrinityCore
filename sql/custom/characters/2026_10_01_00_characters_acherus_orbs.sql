@@ -1,4 +1,4 @@
--- Battle for Acherus: position to return players to after a crash or logout during a match
+-- Heart of Acherus: position to return players to after a crash or logout during a match
 CREATE TABLE IF NOT EXISTS `custom_acherus_orbs_return` (
   `guid` INT UNSIGNED NOT NULL,
   `map` SMALLINT UNSIGNED NOT NULL,
@@ -7,4 +7,4 @@ CREATE TABLE IF NOT EXISTS `custom_acherus_orbs_return` (
   `position_z` FLOAT NOT NULL,
   `orientation` FLOAT NOT NULL,
   PRIMARY KEY (`guid`)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='Battle for Acherus return positions';
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='Heart of Acherus return positions';

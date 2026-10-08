@@ -1,4 +1,4 @@
-# Battle for Acherus
+# Heart of Acherus
 
 Battleground customizado no estilo **Temple of Kotmogu**, jogado em cópias "phaseadas" do salão central de
 **Acherus: The Ebon Hold** (mapa 609). Roda na branch `3.3.5` (cliente 3.3.5a, build 12340) **sem patch de cliente**:
@@ -15,11 +15,11 @@ todo o comportamento é server-side e reaproveita só dados que o cliente já co
 | Times | 10v10, Aliança x Horda | warcraft.wiki.gg |
 | Vitória | primeiro a 1600 pontos | warcraft.wiki.gg |
 | Duração | 25 min, depois vence o maior placar (igual = empate) | decisão do projeto |
-| Tick | a cada 5 s, por orbe carregado | script do Kotmogu no TrinityCore `master` |
+| Tick | a cada 5 s, por runa carregada | script do Kotmogu no TrinityCore `master` |
 | Pontos por tick | poço central **6**, plataforma das forjas **4**, fora do salão **2** | valores do retail (script do `master`); a wiki cita 5/4/3 |
 | Buff do portador | por acúmulo: +20% dano causado, +20% dano recebido, -10% cura recebida; +1 acúmulo a cada 15 s; tetos de +100%/+100%/-50% | decisão do projeto (inspirado na 121164, Orb of Power) |
 | Escala do portador | +20% por acúmulo, até 2x (+100%), travando em 5 acúmulos | decisão do projeto (sem fonte) |
-| Orbes | 1 por jogador, sem montaria; morte do portador devolve o orbe à forja | warcraft.wiki.gg |
+| Runas | 1 por jogador, sem montaria; morte do portador devolve a runa à forja | warcraft.wiki.gg |
 | Kill | +10 pontos para o time a cada kill de jogador inimigo, portador ou não (sem bônus extra por portador; a spell 112910 não existe no 3.3.5) | decisão do projeto |
 | Preparação | 2 min, cada time preso ao seu spawn, dentro de um domo com paredes invisíveis | duração: padrão de BG do core; domo: decisão do projeto, inspirado nas barreiras do Eye of the Storm |
 | Ressurreição | ondas de 30 s, só para quem deu "Release Spirit" e está no range do guide | padrão de BG do core |
@@ -43,7 +43,7 @@ O -5% de absorção recebida do Orb of Power não foi implementado: o 3.3.5 não
 | Spawn Aliança / Horda | 2447.56, -5656.40 / 2397.17, -5581.70 (z 420.65) |
 | Respawn Aliança / Horda (andar de cima) | 2438.10, -5707.64 / 2345.79, -5571.24 (z 444.6), virados para o salão |
 
-Os spawns e respawns são simétricos em relação ao eixo porta → forja B: do spawn, 47.9 jardas até o orbe lateral e
+Os spawns e respawns são simétricos em relação ao eixo porta → forja B: do spawn, 47.9 jardas até a runa lateral e
 114.2 até o Unholy; do respawn, 85.4 até a porta e ~163.7 até o Unholy, para os dois times.
 
 Zonas de pontuação (`GetPointsForPosition`): poço = raio 25 e z < 418; plataforma = raio 62 e até 56 jardas na direção
@@ -56,12 +56,12 @@ da porta; o resto (corredor, área externa, outros andares) = fora.
 | Arquivo | Conteúdo |
 |---|---|
 | `AcherusOrbs.h` | constantes (IDs, posições, timers, pontuação) e as classes `Manager`, `Match`, `MatchPlayer`, `OrbState` |
-| `AcherusOrbs.cpp` | toda a lógica: fila, partidas, phases, orbes, mortes, placar, logout/login |
+| `AcherusOrbs.cpp` | toda a lógica: fila, partidas, phases, runas, mortes, placar, logout/login |
 | `AcherusOrbsScripts.cpp` | NPC da fila, forja clicável, `PlayerScript`, `UnitScript`, `WorldScript`, comandos `.acherus` |
 | `sql/custom/world/2026_10_01_00_world_acherus_orbs.sql` | NPC 990000, textos de gossip 990000/990001, forjas 990001–990003, buff Berserk 990004, parede invisível da preparação 990005, poça de sangue da forja Blood 990006 |
 | `sql/custom/characters/2026_10_01_00_characters_acherus_orbs.sql` | tabela `custom_acherus_orbs_return` |
 | `sql/custom/world/2026_10_04_00_world_acherus_orbs_spirit_healer.sql` | linhas de `spell_area` (área 4342) que liberam 2584/22012/44535 no Acherus |
-| `client/acherus_orbs_ui.lua` | Lua de UI enviado ao cliente (relabels do EotS + marcadores das orbs no minimapa) |
+| `client/acherus_orbs_ui.lua` | Lua de UI enviado ao cliente (relabels do EotS + marcadores das runas no minimapa) |
 
 Os SQLs são aplicados automaticamente pelo updater do worldserver (`updates_include` já aponta para `sql/custom`).
 **Atenção:** `sql/custom/*/.gitignore` ignora `*.sql`, então eles só entram num commit com `git add -f`.
@@ -78,7 +78,7 @@ Todos são `PlayerScript`, sem efeito quando nenhum script os usa.
 | `OnRepopAtGraveyard` | início de `Player::RepopAtGraveyard` | mandar o fantasma para o anjo do time, e não para o cemitério dos DKs |
 | `OnSpiritHealerQuery` | clique no Spirit Guide (`NPCHandler`) e `CMSG_AREA_SPIRIT_HEALER_QUERY`, fora de BG/Battlefield | responder com o `SMSG_AREA_SPIRIT_HEALER_TIME` (timer do popup nativo) |
 | `OnSpiritHealerQueue` | `CMSG_AREA_SPIRIT_HEALER_QUEUE`, fora de BG/Battlefield | entrar na fila de ressurreição do wave, mapeado ao guide (visual 2584) |
-| `OnBeforeLogout` | `WorldSession::LogoutPlayer`, junto do `EventPlayerLoggedOut` das BGs, **antes do save** | soltar o orbe antes de o personagem ser salvo |
+| `OnBeforeLogout` | `WorldSession::LogoutPlayer`, junto do `EventPlayerLoggedOut` das BGs, **antes do save** | soltar a runa antes de o personagem ser salvo |
 | `OnPVPLogDataRequest` | `HandlePVPLogDataOpcode` (`MSG_PVP_LOG_DATA`), fora de BG/Battlefield | responder ao pedido do placar com os dados atuais, deixando-o ao vivo durante a partida |
 | `OnRequestBattlefieldStatus` | fim de `HandleRequestBattlefieldStatusOpcode` (`CMSG_BATTLEFIELD_STATUS`) | manter o botão de BG no minimapa respondendo o pedido de status do cliente |
 | `OnBattlefieldPort` | topo de `HandleBattleFieldPortOpcode` (`CMSG_BATTLEFIELD_PORT`) | tratar o "Leave Queue" da janela PvP, que sai da fila do Acherus |
@@ -138,9 +138,9 @@ Testado em jogo com os comandos `.debug bgui`, que eram um patch local de `cs_de
 
 - **Placar de topo:** o cliente escolhe os frames de world state pelo mapa/zona **informado no pacote**
   `SMSG_INIT_WORLD_STATES`. Mandando mapa 566 / zona 3820, aparece o frame do Eye of the Storm ("Bases: N Victory
-  Points: N/1600"). Usamos `2749`/`2750` para os pontos e `2752`/`2753` (Bases) para os orbes que cada time segura.
+  Points: N/1600"). Usamos `2749`/`2750` para os pontos e `2752`/`2753` (Bases) para as runas que cada time segura.
   Os textos e o teto de 1600 são fixos do cliente. O rótulo "Bases" é do `WorldStateUI.dbc` do cliente (só mandamos o
-  valor); renomear para "Orbs" exigiria patch de cliente.
+  valor); renomear para "Runes" exigiria patch de cliente.
 - **Placar durante a partida:** o cliente pede o placar com `MSG_PVP_LOG_DATA` ao abrir a janela; fora de uma BG real
   nada respondia. O hook `OnPVPLogDataRequest` (`HandlePVPLogDataOpcode`) entrega o placar atual sob demanda, então os
   jogadores aparecem e a coluna de pontos por jogador atualiza enquanto a janela está aberta.
@@ -170,7 +170,7 @@ Testado em jogo com os comandos `.debug bgui`, que eram um patch local de `cs_de
   fake (active ou queued) e reenvia o active assim que o jogador entra no mundo. Clicar no ícone abre o placar. O nome
   "Eye of the Storm" vem do `BattlemasterList.dbc` do cliente e não pode ser trocado sem patch.
 - **Lista de BGs da janela PvP (aba Battlegrounds):** o `PVPBattlegroundFrame` lista os tipos do
-  `BattlemasterList.dbc` (que não tem id livre). O payload expõe uma entrada sintética "Battle for Acherus"
+  `BattlemasterList.dbc` (que não tem id livre). O payload expõe uma entrada sintética "Heart of Acherus"
   **envolvendo `GetNumBattlegroundTypes`/`GetBattlegroundInfo`** (mais uma entrada, no fim): assim o próprio
   `PVPBattleground_UpdateBattlegrounds` conta a linha, desenha e inclui no range do `FauxScrollFrame`, rolando
   junto com as demais. Selecionar a linha (o payload intercepta `PVPBattleground_UpdateInfo`) troca o texto pela lore
@@ -183,12 +183,12 @@ Testado em jogo com os comandos `.debug bgui`, que eram um patch local de `cs_de
   (`AcherusBG_UI.active`), o ícone de queue é movido da linha do EotS para a linha Acherus; o EotS real continua
   na lista. (O payload também corrige o alvo morto do relabel: `PVPBattlefieldFrame` não existe — o frame é
   `PVPBattlegroundFrame`.)
-- **Marcadores das orbs no minimapa:** ícones desenhados por Lua (payload do cliente) parentados ao `Minimap`, um por
-  orb, com o ícone da presença de DK (Frost/Blood/Unholy) em 18×18 e recortado via `SetTexCoord` em texels inteiros do
+- **Marcadores das runas no minimapa:** ícones desenhados por Lua (payload do cliente) parentados ao `Minimap`, um por
+  runa, com o ícone da presença de DK (Frost/Blood/Unholy) em 18×18 e recortado via `SetTexCoord` em texels inteiros do
   ícone de 64×64 (0.0625/0.9375, tira a borda clara embutida sem misturar a linha de borda fracionária). Como o 3.3.5
   não expõe filtro/mipmap/snapping por textura, o marcador só é re-ancorado quando anda ≥1 px, para não re-rasterizar o
   ícone reduzido em offsets sub-pixel a cada frame (é isso que fazia serrilhar/cintilar ao mover). O servidor manda a
-  posição de mundo do jogador e de cada orb (do portador, ou da forja se não portado) a
+  posição de mundo do jogador e de cada runa (do portador, ou da forja se não portado) a
   cada 0,25 s pelo canal de addon messages (`AcherusBG_Orbs.Update`). O cliente reconstrói a posição do jogador a cada
   frame via `GetPlayerMapPosition` (transformação mundo↔mapa **fixa** no Lua, valores do `WorldMapArea.dbc` do cliente)
   para o movimento ficar suave, segue o unit token dos portadores do mesmo time e converte para o minimapa com o span
@@ -197,8 +197,8 @@ Testado em jogo com os comandos `.debug bgui`, que eram um patch local de `cs_de
   topo-esquerda, y para baixo, então o sinal é invertido em relação aos offsets de tela do `SetPoint`). O nível dos
   marcadores é `Minimap+1` (logo acima do terreno), abaixo dos botões nativos do minimapa, que ficam em `Minimap+2/+3`
   (BG, tracking, zoom, mapa, correio, LFG), para que o ícone preso na borda não cubra os botões.
-- **Mensagens de orbe:** `CHAT_MSG_RAID_BOSS_EMOTE`, que o cliente mostra em amarelo no centro da tela e também no
-  chat. O nome do orbe vai colorido com códigos `|c` (Frost azul, Blood vermelho, Unholy verde).
+- **Mensagens de runa:** `CHAT_MSG_RAID_BOSS_EMOTE`, que o cliente mostra em amarelo no centro da tela e também no
+  chat. O nome da runa vai colorido com códigos `|c` (Frost azul, Blood vermelho, Unholy verde).
 - **Aura do portador:** os Portal States (33338/33339/33340) aparecem na barra de buffs e o `acherus_orbs_ui.lua` os
   relabela (ícone de spell de DK, nome e descrição) no jogador, target, boss, raid e no tooltip do party, além do FCT
   (`CombatText_AddMessage`). A identificação é pelo nome localizado da spell, já que os três portais compartilham o
@@ -207,14 +207,14 @@ Testado em jogo com os comandos `.debug bgui`, que eram um patch local de `cs_de
   do retail). Quem pontua recebe "+N points" no topo (`SendAreaTriggerMessage`; o `SendNotification` sai em
   vermelho, como erro): o portador a cada tick e quem deu o golpe final no bônus de kill.
 - **Sons** (constantes do core 3.3.5, `PlaySoundToAll` das BGs): 8174 (`BG_WS_SOUND_ALLIANCE_FLAG_PICKED_UP`) ao pegar
-  um orbe e quando ele volta (morte do portador, logout, saída); 3439 (`SOUND_BG_START`) quando a batalha começa;
+  uma runa e quando ela volta (morte do portador, logout, saída); 3439 (`SOUND_BG_START`) quando a batalha começa;
   8455/8454 (`SOUND_ALLIANCE_WINS`/`SOUND_HORDE_WINS`) na vitória, nada no empate.
 
 ## Fluxo da partida
 
 1. **Fila:** NPC `990000` (posicionar com `.npc add 990000`; hoje fica em Old Town, Stormwind), `.acherus queue`
    (GM: jogador selecionado ou você, alterna; jogador comum: só você, sem alternar) ou o botão "Join" da linha
-   "Battle for Acherus" na aba Battlegrounds da janela PvP (manda `.acherus queue` no chat).
+   "Heart of Acherus" na aba Battlegrounds da janela PvP (manda `.acherus queue` no chat).
    Exige nível 80 e o jogador não pode estar em BG, arena nem em fila de BG/arena real (`InBattlegroundQueue`). As
    filas são separadas por facção. Enquanto espera, o jogador recebe um battlefield status "queued" fake, então o
    botão de BG aparece no minimapa e o "Leave Queue" da janela PvP sai da fila.
@@ -232,10 +232,10 @@ Testado em jogo com os comandos `.debug bgui`, que eram um patch local de `cs_de
    phase da partida e é teleportado ao spawn do time. Ao chegar, entra no raid do time (ver Raids); ao sair, volta ao
    grupo que tinha.
 4. **Preparação (2 min):** cada time fica num domo no seu spawn (ver "Domo da preparação"), com avisos aos 60 s e
-   30 s. As forjas já ficam acesas, mas os orbes só podem ser pegos quando a batalha começa. Os anjos ficam dentro do
+   30 s. As forjas já ficam acesas, mas as runas só podem ser pegas quando a batalha começa. Os anjos ficam dentro do
    spawn, como no Warsong Gulch. Quem morre dá Release e ressuscita ali, na onda.
 5. **Partida (25 min):** os anjos do spawn, o domo e as paredes somem, e quem ainda estiver como fantasma ressuscita
-   no spawn. Clicar numa forja dá o orbe: efeito da presença de DK no portador, aura do orbe, escala, os visuais da
+   no spawn. Clicar numa forja dá a runa: efeito da presença de DK no portador, aura da runa, escala, os visuais da
    forja apagam, o jogador é desmontado e perde stealth/invisibilidade.
    O buff Berserk aparece no lugar do portal para o andar de cima (2383.65, -5645.20, 420.77, a 0,2 jarda do eixo porta →
    forja Unholy, então a mesma distância para os dois times), virado para o poço. É o GO 990004, cópia do 179905 das
@@ -243,17 +243,17 @@ Testado em jogo com os comandos `.debug bgui`, que eram um patch local de `cs_de
    considera usado depois de vê-lo pronto; aí o apaga e cria outro 180 s depois. As BGs fazem isso no
    `Battleground::HandleTriggerBuff`, que não roda fora delas.
 6. **Tick de 5 s:** pontos por portador conforme a zona. Atualiza os world states.
-7. **Morte:** o orbe volta à forja (com anúncio). A morte conta no placar só depois da preparação. O Release leva o
+7. **Morte:** a runa volta à forja (com anúncio). A morte conta no placar só depois da preparação. O Release leva o
    fantasma ao anjo da ponta do time, e só fantasmas ressuscitam na onda de 30 s.
 8. **Fim:** 1600 pontos ou fim do tempo. Placar final com vencedor e todos ficam parados, como numa BG
    (`SetClientControl`, que o cliente desfaz sozinho no teleporte). Quem volta de um logout nesse período recebe o
    placar e também fica parado. Após 2 min (ou pelo botão Leave), todos voltam à
    posição salva e recuperam phase, escala, auras e PvP.
-9. **Logout:** o orbe cai antes do save. O jogador fica marcado como offline por até 300 s; se voltar a tempo,
+9. **Logout:** a runa cai antes do save. O jogador fica marcado como offline por até 300 s; se voltar a tempo,
    continua na partida. Se não, ou se a partida já acabou, o registro de retorno fica no banco.
 10. **Login sem partida (queda do servidor ou offline expirado):** o retorno é agendado e executado pelo update do
     mundo 1 s depois, com até 10 tentativas. O registro só é apagado depois de confirmar a chegada. Todo login remove
-    auras de orbe que tenham ficado salvas.
+    auras de runa que tenham ficado salvas.
 
 Durante a partida, para os participantes: a aura de zona `51915` (Undying Resolve, impede morrer) é removida, o
 santuário do mapa 609 é desligado e a flag PvP é forçada.
@@ -262,8 +262,8 @@ santuário do mapa 609 é desligado e a flag PvP é forçada.
 
 ### Forjas
 
-Enquanto o orbe está pronto (inclusive na preparação), cada forja mostra auras em bunnies invisíveis (`23837`) e GOs
-de cenário; tudo some quando o orbe é pego e volta quando ele retorna (`SetForgeVisuals`). Os valores ficam em
+Enquanto a runa está pronta (inclusive na preparação), cada forja mostra auras em bunnies invisíveis (`23837`) e GOs
+de cenário; tudo some quando a runa é pega e volta quando ela retorna (`SetForgeVisuals`). Os valores ficam em
 `OrbTemplates` (`AcherusOrbs.cpp`) e as constantes em `Spells`/`Ids` (`AcherusOrbs.h`).
 
 | Forja | Bunny das auras (`ForgeAuraScale`) | Auras com bunny próprio (`ForgeScaledAuras`) | GOs (`ForgeObjects`) |
@@ -292,7 +292,7 @@ de cenário; tudo some quando o orbe é pego e volta quando ele retorna (`SetFor
 
 ### Portador
 
-| Orbe | Ao pegar (visual kit, uma vez) | Auras enquanto carrega |
+| Runa | Ao pegar (visual kit, uma vez) | Auras enquanto carrega |
 |---|---|---|
 | Frost | 10288, da Frost Presence (48263) | 31954 Spirit Particles + 33340 Blue Portal State |
 | Blood | 10283, da Blood Presence (48266) | 33338 Red Portal State + 31951 Spirit Particles |
@@ -300,7 +300,7 @@ de cenário; tudo some quando o orbe é pego e volta quando ele retorna (`SetFor
 
 O corpo do portador combina partículas de espírito (o mesmo visual das forjas, agora nas auras do portador) com os
 Portal States. Os Portal States são dummy e **visíveis** na barra de buffs; o `acherus_orbs_ui.lua` reescreve o ícone,
-o nome e o tooltip de cada um (ícones de spell de DK, "Frost Orb"/"Blood Orb"/"Unholy Orb"), para um DK não terminar
+o nome e o tooltip de cada um (ícones de spell de DK, "Frost Rune"/"Blood Rune"/"Unholy Rune"), para um DK não terminar
 com dois ícones de presença idênticos na barra. As partículas (`31954`/`31951`/`43167`/`43161`, todas `spell_frost_wisp`)
 não são relabeladas: mantêm o próprio ícone na barra. As Banish State usadas antes (33344/33343/32567) têm
 `SPELL_ATTR0_HIDDEN_CLIENTSIDE`, então não aparecem na barra. Os três portais compartilham o mesmo ícone do DBC
@@ -316,7 +316,7 @@ cada 15 s, mas os quatro modificadores congelam em **5 acúmulos** nos tetos +10
 −50% cura recebida e +100% escala (o número no ícone continua contando).
 
 As presenças não são aplicadas: têm efeito de stat (armadura, ameaça, dano, haste) e trocariam a presença de um DK. O
-script só toca o efeito delas (`SendPlaySpellVisualKit`, o `ImpactKit` do `SpellVisual.dbc`) uma vez ao pegar o orbe;
+script só toca o efeito delas (`SendPlaySpellVisualKit`, o `ImpactKit` do `SpellVisual.dbc`) uma vez ao pegar a runa;
 esses kits não têm versão permanente (`StateKit`) e trazem som, então repeti-los tocaria o som o tempo todo. Os
 modificadores de dano e cura ficam no `UnitScript` (`ModifyMeleeDamage`, `ModifySpellDamageTaken`,
 `ModifyPeriodicDamageAurasTick`, `OnHeal`), e `OnDamage`/`OnHeal` também alimentam as estatísticas do placar final.
@@ -345,7 +345,7 @@ AcherusOrbs.ClientLuaFile =
 ```
 
 As chaves não estão no `worldserver.conf.dist` (que é do core); no ambiente de teste foram adicionadas ao fim do
-`worldserver.conf`, numa seção "BATTLE FOR ACHERUS". Sem elas, os valores padrão acima são usados (o log avisa).
+`worldserver.conf`, numa seção "HEART OF ACHERUS". Sem elas, os valores padrão acima são usados (o log avisa).
 São lidas no `OnStartup` e no `.reload config`. `ClientLuaFile` (caminho do `.lua`) não tem padrão: com
 `ClientUi = 1` e sem ele o relabel fica desligado.
 
@@ -422,7 +422,7 @@ porque um corpo cru (`R`/`DONE`) seria um erro de sintaxe caso alguma mensagem v
 mensagens de chat em CR/LF). O hook do tooltip do minimapa (`MiniMapBattlefieldFrame`) é feito de forma
 preguiçosa dentro do `RelabelAll` (o botão pode não existir quando o payload roda) e usa `HookScript` no
 `OnUpdate` do frame (o texto é reescrito a cada frame pelo `MiniMapBattlefieldFrame_OnUpdate` nativo),
-trocando o nome localizado do battleground (obtido via `GetBattlefieldStatus`) por "Battle for Acherus" em
+trocando o nome localizado do battleground (obtido via `GetBattlefieldStatus`) por "Heart of Acherus" em
 todas as linhas do tooltip.
 
 **Por que o handshake não fica no bootstrap:** o wrapper do Warden é
@@ -485,18 +485,18 @@ mesma pasta: `cl.exe` órfãos travam o PCH (`MSB6003 ... cmake_pch.pch`).
 Validado em jogo:
 - fila pelo NPC (gossip com saudação, regras, entrar/sair) e pelo comando;
 - teleporte, phase, placar do EotS, preparação;
-- forjas, orbes, visuais, pontuação;
+- forjas, runas, visuais, pontuação;
 - PvP entre facções;
 - anjos e ressurreição nas pontas;
 - placar final e saída;
 - preparação estilo Warsong (anjo no spawn + Release + onda);
-- reconexão em até 300 s e orbe solto antes do save;
+- reconexão em até 300 s e runa solta antes do save;
 - retorno pós-queda pelo update do mundo, com confirmação;
 - exigência de nível 80;
 - timers do placar final via battlefield status ("Time Elapsed" e "closing in");
 - coluna Flag Captures com os pontos de cada jogador;
 - jogadores parados durante o placar final e teleporte de saída no tempo certo;
-- efeito da presença uma vez ao pegar o orbe;
+- efeito da presença uma vez ao pegar a runa;
 - domo da preparação com paredes invisíveis e limitador de reserva;
 - forjas acesas desde a preparação;
 - visuais das forjas (auras, beams, escalas por bunny, bunnies virados para o poço, poça e círculo);
@@ -511,7 +511,7 @@ Implementado e compilado, **ainda não testado em jogo**:
 - botão de BG no minimapa na fila, na preparação e durante a partida (via `OnRequestBattlefieldStatus`), com o "Leave Queue" da janela PvP saindo da fila (`OnBattlefieldPort`), e placar ao vivo sob demanda (`OnPVPLogDataRequest`) com a coluna de pontos por jogador atualizando;
 - regra de fila exclusiva: quem já está em fila de BG/arena real não entra na fila do Acherus (`InBattlegroundQueue`);
 - relabel de UI no cliente via Warden (`OnAddonMessage` + `acherus_orbs_ui.lua`, sem check dedicado em `warden_checks`), validado em jogo (exige `Warden.Enabled=1`);
-- sons, mensagens de orbe no centro, Berserk e vitória validados; falta validar a cor amarela de "+N points"
+- sons, mensagens de runa no centro, Berserk e vitória validados; falta validar a cor amarela de "+N points"
   (`SendAreaTriggerMessage`), o Berserk virado para o poço e o 51721 para todos;
 - Banish State no portador sem ícone na barra de buffs, e a poça 990006 sem tooltip nem destaque no mouseover.
 

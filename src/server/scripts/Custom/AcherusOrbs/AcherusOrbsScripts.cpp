@@ -54,7 +54,7 @@ struct npc_acherus_orbs_battlemaster : public ScriptedAI
         if (sAcherusOrbs->IsQueued(player->GetGUID()))
             AddGossipItemFor(player, GOSSIP_ICON_CHAT, "I want to leave the queue.", GOSSIP_SENDER_MAIN, ACTION_LEAVE_QUEUE);
         else if (!sAcherusOrbs->IsInMatch(player->GetGUID()))
-            AddGossipItemFor(player, GOSSIP_ICON_CHAT, Trinity::StringFormat("I want to join the battle for Acherus. (Alliance {}, Horde {} queued)",
+            AddGossipItemFor(player, GOSSIP_ICON_CHAT, Trinity::StringFormat("I want to join the battle for the Heart of Acherus. (Alliance {}, Horde {} queued)",
                 queued[TEAM_ALLIANCE], queued[TEAM_HORDE]), GOSSIP_SENDER_MAIN, ACTION_JOIN_QUEUE);
 
         AddGossipItemFor(player, GOSSIP_ICON_CHAT, "How does the battle work?", GOSSIP_SENDER_MAIN, ACTION_RULES);
@@ -94,14 +94,14 @@ struct npc_acherus_orbs_battlemaster : public ScriptedAI
             {
                 std::string error;
                 if (sAcherusOrbs->Enqueue(player, error))
-                    handler.SendSysMessage("You are now queued for the battle for Acherus. You will be taken there when the battle is ready.");
+                    handler.SendSysMessage("You are now queued for the battle for the Heart of Acherus. You will be taken there when the battle is ready.");
                 else if (!error.empty())
                     handler.SendSysMessage(error);
                 break;
             }
             case ACTION_LEAVE_QUEUE:
                 if (sAcherusOrbs->Dequeue(player->GetGUID()))
-                    handler.SendSysMessage("You left the queue for the battle for Acherus.");
+                    handler.SendSysMessage("You left the queue for the battle for the Heart of Acherus.");
                 break;
             default:
                 break;
@@ -309,7 +309,7 @@ public:
 
         if (isGm && sAcherusOrbs->Dequeue(player->GetGUID()))
         {
-            handler->SendSysMessage(Trinity::StringFormat("{} left the Acherus queue.", player->GetName()));
+            handler->SendSysMessage(Trinity::StringFormat("{} left the Heart of Acherus queue.", player->GetName()));
             return true;
         }
 
@@ -326,9 +326,9 @@ public:
         }
 
         if (isGm)
-            handler->SendSysMessage(Trinity::StringFormat("{} queued for Acherus.", player->GetName()));
+            handler->SendSysMessage(Trinity::StringFormat("{} queued for the Heart of Acherus.", player->GetName()));
         else
-            handler->SendSysMessage("You queued for the battle for Acherus.");
+            handler->SendSysMessage("You queued for the battle for the Heart of Acherus.");
         return true;
     }
 
@@ -336,7 +336,7 @@ public:
     static bool HandleStartCommand(ChatHandler* handler)
     {
         sAcherusOrbs->ForceStart();
-        handler->SendSysMessage("Acherus match will start with the current queue.");
+        handler->SendSysMessage("The Heart of Acherus match will start with the current queue.");
         return true;
     }
 
@@ -346,12 +346,12 @@ public:
         Player* player = handler->GetPlayer();                   // null from the console
         if (player && sAcherusOrbs->SkipPreparation(player->GetGUID()))
         {
-            handler->SendSysMessage("Your Acherus match will begin now.");
+            handler->SendSysMessage("Your Heart of Acherus match will begin now.");
             return true;
         }
 
         sAcherusOrbs->SkipPreparation(ObjectGuid::Empty);
-        handler->SendSysMessage("Every Acherus match in preparation will begin now.");
+        handler->SendSysMessage("Every Heart of Acherus match in preparation will begin now.");
         return true;
     }
 
@@ -359,7 +359,7 @@ public:
     static bool HandleStopCommand(ChatHandler* handler)
     {
         sAcherusOrbs->EndAll();
-        handler->SendSysMessage("Every Acherus match will end as a draw.");
+        handler->SendSysMessage("Every Heart of Acherus match will end as a draw.");
         return true;
     }
 

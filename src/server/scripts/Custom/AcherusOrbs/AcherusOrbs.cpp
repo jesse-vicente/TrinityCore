@@ -237,7 +237,7 @@ namespace AcherusOrbs
         player->SendDirectMessage(packet.Write());
     }
 
-    // the client only relabels while the server says the Eye of the Storm it sees is the Acherus fake;
+    // the client only relabels while the server says the Eye of the Storm it sees is the Heart of Acherus fake;
     // the body is valid Lua executed by the listener, and a no-op while the payload is not applied
     void Manager::SetClientRelabel(Player* player, bool active) const
     {
@@ -465,7 +465,7 @@ namespace AcherusOrbs
     {
         if (IsInMatch(player->GetGUID()))
         {
-            error = "You are already in a battle for Acherus.";
+            error = "You are already in the battle for the Heart of Acherus.";
             return false;
         }
 
@@ -476,7 +476,7 @@ namespace AcherusOrbs
         }
 
         // a real battleground or arena queue also owns one of the two queue slots, and a player in one
-        // cannot join the Acherus queue (the custom mode shares the client with the native pool)
+        // cannot join the Heart of Acherus queue (the custom mode shares the client with the native pool)
         if (player->InBattlegroundQueue())
         {
             error = "You cannot queue while in a battleground or arena queue.";
@@ -485,7 +485,7 @@ namespace AcherusOrbs
 
         if (player->GetLevel() < RequiredLevel)
         {
-            error = Trinity::StringFormat("You must be level {} to join the battle for Acherus.", RequiredLevel);
+            error = Trinity::StringFormat("You must be level {} to join the battle for the Heart of Acherus.", RequiredLevel);
             return false;
         }
 
@@ -499,7 +499,7 @@ namespace AcherusOrbs
             {
                 if (std::find(queue.begin(), queue.end(), player->GetGUID()) != queue.end())
                 {
-                    error = "You are already queued for the battle for Acherus.";
+                    error = "You are already queued for the battle for the Heart of Acherus.";
                     return false;
                 }
             }
@@ -552,7 +552,7 @@ namespace AcherusOrbs
 
     std::string Manager::GetStatus() const
     {
-        std::string text = Trinity::StringFormat("Acherus orbs: {} match(es), {} per team (min {}), kill bonus {}",
+        std::string text = Trinity::StringFormat("Heart of Acherus: {} match(es), {} per team (min {}), kill bonus {}",
             _matches.size(), _playersPerTeam, _minPlayersPerTeam, _killBonus);
 
         for (std::unique_ptr<Match> const& match : _matches)
@@ -864,9 +864,9 @@ namespace AcherusOrbs
         {
             case MatchStatus::Preparation:
                 if (oldTimer > MINUTE * IN_MILLISECONDS && match.StatusTimer <= MINUTE * IN_MILLISECONDS)
-                    Announce(match, CHAT_MSG_BG_SYSTEM_NEUTRAL, "The battle for Acherus begins in 1 minute.");
+                    Announce(match, CHAT_MSG_BG_SYSTEM_NEUTRAL, "The battle for the Heart of Acherus begins in 1 minute.");
                 else if (oldTimer > 30 * IN_MILLISECONDS && match.StatusTimer <= 30 * IN_MILLISECONDS)
-                    Announce(match, CHAT_MSG_BG_SYSTEM_NEUTRAL, "The battle for Acherus begins in 30 seconds. Prepare yourselves!");
+                    Announce(match, CHAT_MSG_BG_SYSTEM_NEUTRAL, "The battle for the Heart of Acherus begins in 30 seconds. Prepare yourselves!");
 
                 if (!match.StatusTimer)
                     StartMatch(match);
@@ -1264,11 +1264,11 @@ namespace AcherusOrbs
         if (Map* map = sMapMgr->CreateBaseMap(Ids::MapId))
             SpawnObjects(match, map);
 
-        // the forges already glow during the preparation, the orbs can only be taken once the battle begins
+        // the forges already glow during the preparation, the runes can only be taken once the battle begins
         for (uint8 orb = 0; orb < MAX_ORBS; ++orb)
             SetForgeVisuals(match, OrbType(orb), true);
 
-        Announce(match, CHAT_MSG_BG_SYSTEM_NEUTRAL, "The battle for Acherus begins in 2 minutes.");
+        Announce(match, CHAT_MSG_BG_SYSTEM_NEUTRAL, "The battle for the Heart of Acherus begins in 2 minutes.");
     }
 
     void Manager::StartMatch(Match& match)
@@ -1315,7 +1315,7 @@ namespace AcherusOrbs
             if (Player* player = ObjectAccessor::FindConnectedPlayer(guid))
                 SendBattlefieldStatus(match, matchPlayer, player);
 
-        Announce(match, CHAT_MSG_BG_SYSTEM_NEUTRAL, "The battle for Acherus has begun! Claim the orbs at the runeforges!");
+        Announce(match, CHAT_MSG_BG_SYSTEM_NEUTRAL, "The battle for the Heart of Acherus has begun! Claim the runes at the runeforges!");
         PlaySound(match, Sounds::BattleStart);
     }
 
@@ -1349,10 +1349,10 @@ namespace AcherusOrbs
                 SendEndState(match, matchPlayer, player);
 
         if (winner == TEAM_NEUTRAL)
-            Announce(match, CHAT_MSG_BG_SYSTEM_NEUTRAL, "The battle for Acherus ended in a draw.");
+            Announce(match, CHAT_MSG_BG_SYSTEM_NEUTRAL, "The battle for the Heart of Acherus ended in a draw.");
         else
         {
-            Announce(match, TeamChatMsg(winner), Trinity::StringFormat("The {} wins the battle for Acherus!", TeamName(winner)));
+            Announce(match, TeamChatMsg(winner), Trinity::StringFormat("The {} wins the battle for the Heart of Acherus!", TeamName(winner)));
             PlaySound(match, winner == TEAM_ALLIANCE ? Sounds::AllianceWins : Sounds::HordeWins);
         }
     }
@@ -1384,7 +1384,7 @@ namespace AcherusOrbs
         player->TeleportTo(Ids::MapId, spawn.GetPositionX(), spawn.GetPositionY(), spawn.GetPositionZ(), spawn.GetOrientation());
 
         ChatHandler(player->GetSession()).SendSysMessage(match.Status == MatchStatus::InProgress
-            ? "You are joining a battle for Acherus in progress." : "Your battle for Acherus is starting.");
+            ? "You are joining the battle for the Heart of Acherus in progress." : "Your battle for the Heart of Acherus is starting.");
         if (player->IsGameMaster())
             ChatHandler(player->GetSession()).SendSysMessage("You are in GM mode and see every phase. Use .gm off to play the match.");
 
@@ -1530,7 +1530,7 @@ namespace AcherusOrbs
         player->GetSession()->SendSetPhaseShift(phaseMask);
     }
 
-    // ----------------------------------------------------------------- orbs
+    // ----------------------------------------------------------------- runes
 
     void Manager::SpawnObjects(Match& match, Map* map)
     {
@@ -2188,15 +2188,15 @@ namespace AcherusOrbs
             return;
 
         if (match->Status != MatchStatus::InProgress)
-            SendUseError(player, "The orbs are not active yet.");
+            SendUseError(player, "The runes are not active yet.");
         else if (!player->IsAlive())
             return;
         else if (IsAboveForges(player))
             SendUseError(player, "You are too far away.");
         else if (!match->Orbs[*orb].Carrier.IsEmpty())
-            SendUseError(player, "This orb is already taken.");
+            SendUseError(player, "This rune is already taken.");
         else if (GetCarriedOrb(*match, player->GetGUID()))
-            SendUseError(player, "You can only carry one orb.");
+            SendUseError(player, "You can only carry one rune.");
         else
             PickUpOrb(*match, *orb, player);
     }
@@ -2283,7 +2283,7 @@ namespace AcherusOrbs
         SetForgeVisuals(match, orb, false);
         UpdateWorldStates(match);
 
-        Announce(match, CHAT_MSG_RAID_BOSS_EMOTE, Trinity::StringFormat("{} has taken the |c{}{}|r orb!", player->GetName(), orbTemplate.Color, orbTemplate.Name));
+        Announce(match, CHAT_MSG_RAID_BOSS_EMOTE, Trinity::StringFormat("{} has taken the |c{}{}|r rune!", player->GetName(), orbTemplate.Color, orbTemplate.Name));
         PlaySound(match, Sounds::OrbEvent);
     }
 
@@ -2313,7 +2313,7 @@ namespace AcherusOrbs
 
         if (announce)
         {
-            Announce(match, CHAT_MSG_RAID_BOSS_EMOTE, Trinity::StringFormat("The |c{}{}|r orb has returned to its runeforge!", orbTemplate.Color, orbTemplate.Name));
+            Announce(match, CHAT_MSG_RAID_BOSS_EMOTE, Trinity::StringFormat("The |c{}{}|r rune has returned to its runeforge!", orbTemplate.Color, orbTemplate.Name));
             PlaySound(match, Sounds::OrbEvent);
         }
     }
@@ -2378,7 +2378,7 @@ namespace AcherusOrbs
                 ++matchPlayer.HonorableKills;
         }
 
-        // any enemy player, carrying an orb or not; the victory is checked in the world update
+        // any enemy player, carrying a rune or not; the victory is checked in the world update
         if (_killBonus)
         {
             uint32& score = match->Score[killerData.Team];
@@ -2408,14 +2408,14 @@ namespace AcherusOrbs
     }
 
     // the player joined a real battleground or arena queue: the two queues are mutually exclusive, so the
-    // Acherus queue is dropped (Dequeue also clears the fake status/slot and turns the relabel off)
+    // Heart of Acherus queue is dropped (Dequeue also clears the fake status/slot and turns the relabel off)
     void Manager::OnJoinRealBattlegroundQueue(Player* player)
     {
         if (Dequeue(player->GetGUID()))
-            ChatHandler(player->GetSession()).SendSysMessage("You left the queue for the battle for Acherus to join a battleground.");
+            ChatHandler(player->GetSession()).SendSysMessage("You left the queue for the battle for the Heart of Acherus to join a battleground.");
     }
 
-    // called before the player is saved, so the orb auras are never stored
+    // called before the player is saved, so the rune auras are never stored
     void Manager::OnBeforeLogout(Player* player)
     {
         Match* match = GetMatch(player->GetGUID());
@@ -2458,7 +2458,7 @@ namespace AcherusOrbs
         }
         SendBootstrap(player);
 
-        // the orb is never kept across a login, its aura may still have been saved by a crash
+        // the rune is never kept across a login, its aura may still have been saved by a crash
         for (OrbTemplate const& orbTemplate : OrbTemplates)
             for (uint32 spellId : orbTemplate.CarrierAuras)
                 if (spellId)
@@ -2630,7 +2630,7 @@ namespace AcherusOrbs
             return;
 
         if (Dequeue(player->GetGUID()))
-            ChatHandler(player->GetSession()).SendSysMessage("You left the queue for the battle for Acherus.");
+            ChatHandler(player->GetSession()).SendSysMessage("You left the queue for the battle for the Heart of Acherus.");
 
         handled = true;
     }
