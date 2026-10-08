@@ -31,7 +31,9 @@
 #include "Map.h"
 #include "MapManager.h"
 #include "MiscPackets.h"
+#include "MotionMaster.h"
 #include "ObjectAccessor.h"
+#include "ObjectMgr.h"
 #include "Player.h"
 #include "SpellAuraEffects.h"
 #include "SpellAuras.h"
@@ -69,7 +71,8 @@ namespace AcherusOrbs
         constexpr float SpiritGuideOffset = 3.0f;                   // spirit guide stands in front of the respawn point
         constexpr float SpiritHealerRange = 17.0f;                  // client AREA_SPIRIT_HEALER_IN_RANGE radius, measured in game
         constexpr float PortalRange = 3.0f;                         // radius of the Acherus teleporter aura (54724, SpellRadius 15)
-        constexpr float ForgeMaxHeight = 8.0f;                      // the upper floor is ~23 yards over the forges, inside their use range
+        constexpr float AmbientCreatureRadius = 150.0f;            // map 0 spawns this close to the hall belong to the floating Acherus
+        constexpr float ForgeMaxHeight = 8.0f;                     // the upper floor is ~23 yards over the forges, inside their use range
         constexpr uint32 ForgeLockedFlags = GO_FLAG_INTERACT_COND;  // usable only with GO_DYNFLAG_LO_ACTIVATE: the client shows the plain cursor
         constexpr float StairsPortalScale = 8.0f;
         // collision box of CollisionWallPvP01 (GameObjectModels.dtree) at scale 1: 11.08 yards along its local Y axis and
@@ -1537,6 +1540,64 @@ namespace AcherusOrbs
 
         SpawnStairsBarrier(match, map);
         match.StairsPortal = SummonStairsPortal(match, map);
+        SpawnAmbientCreatures(match, map);
+    }
+
+    // the Risen Drudges and Vigilant Gargoyles of Acherus, as scenery: the spawns of the Acherus floating over the
+    // Eastern Plaguelands (map 0, same coordinates as the hall) and of this map, copied with their stand state, emote
+    // and movement
+    void Manager::SpawnAmbientCreatures(Match& match, Map* map)
+    {
+        for (auto const& [spawnId, data] : sObjectMgr->GetAllCreatureData())
+        {
+            if (data.id != Ids::NpcRisenDrudge && data.id != Ids::NpcVigilantGargoyle)
+                continue;
+
+            if (data.mapId != Ids::MapId && (data.mapId != 0 || data.spawnPoint.GetExactDist2d(Positions::Center) > AmbientCreatureRadius))
+                continue;
+
+            ObjectGuid const guid = SummonAmbientCreature(match, map, data);
+            if (!guid.IsEmpty())
+                match.AmbientCreatures.push_back(guid);
+        }
+    }
+
+    // nobody can select, attack, heal or otherwise affect them, and they react to nothing
+    ObjectGuid Manager::SummonAmbientCreature(Match const& match, Map* map, CreatureData const& data)
+    {
+        Position position = data.spawnPoint;
+        for (Positions::AmbientCreatureMove const& move : Positions::AmbientCreatureMoves)
+            if (move.SpawnId == data.spawnId)
+                position = move.Destination;
+
+        TempSummon* creature = map->SummonCreature(data.id, position);
+        if (!creature)
+            return ObjectGuid::Empty;
+
+        creature->SetPhaseMask(match.PhaseMask, true);
+        creature->SetFaction(FACTION_FRIENDLY);
+        creature->SetReactState(REACT_PASSIVE);
+        creature->SetImmuneToAll(true);
+        creature->SetUnitFlag(UNIT_FLAG_NON_ATTACKABLE | UNIT_FLAG_UNINTERACTIBLE);
+
+        CreatureAddon const* addon = sObjectMgr->GetCreatureAddon(data.spawnId);
+        if (addon)
+        {
+            creature->SetStandState(UnitStandStateType(addon->standState));
+            creature->SetSheath(SheathState(addon->sheathState));
+            if (addon->emote)
+                creature->SetEmoteState(Emote(addon->emote));
+        }
+
+        if (addon && addon->path_id)
+            creature->GetMotionMaster()->MovePath(addon->path_id, true);
+        else if (data.movementType == RANDOM_MOTION_TYPE && data.wander_distance > 0.0f)
+        {
+            creature->SetWanderDistance(data.wander_distance);
+            creature->GetMotionMaster()->MoveRandom(data.wander_distance);
+        }
+
+        return creature->GetGUID();
     }
 
     ObjectGuid Manager::SummonSpiritGuide(Match const& match, Map* map, Position const& graveyard, TeamId team)
@@ -1801,6 +1862,10 @@ namespace AcherusOrbs
 
         for (ObjectGuid& guid : match.SpiritGuides)
             DespawnCreature(map, guid);
+
+        for (ObjectGuid& guid : match.AmbientCreatures)
+            DespawnCreature(map, guid);
+        match.AmbientCreatures.clear();
 
         for (ObjectGuid& guid : match.PreparationSpiritGuides)
             DespawnCreature(map, guid);

@@ -35,6 +35,7 @@
 #include <vector>
 
 class Creature;
+struct CreatureData;
 class GameObject;
 class Group;
 class Map;
@@ -55,6 +56,8 @@ namespace AcherusOrbs
         static constexpr uint32 HallAreaId = 4342;                  // Acherus: The Ebon Hold
         static constexpr uint32 NpcBattlemaster = 990000;
         static constexpr uint32 NpcBeamTrigger = 23837;              // ELM General Purpose Bunny
+        static constexpr uint32 NpcRisenDrudge = 29212;              // ambient, copied from the Acherus spawns
+        static constexpr uint32 NpcVigilantGargoyle = 29239;         // ambient, copied from the Acherus spawns
         static constexpr uint32 NpcPreparationDome = 28306;          // Anti-Magic Zone totem of the death knights: invisible, small air totem for GMs
         static constexpr uint32 NpcSpiritGuideAlliance = 13116;      // same spirit guides as the battlegrounds
         static constexpr uint32 NpcSpiritGuideHorde = 13117;
@@ -157,6 +160,18 @@ namespace AcherusOrbs
         {{
             { 2472.58f, -5530.56f, 420.649078f, 4.523f },
             { 2523.22f, -5605.63f, 420.648682f, 2.947f }
+        }};
+
+        // ambient creature copies placed away from their original spawn; nothing else of them changes
+        struct AmbientCreatureMove
+        {
+            uint32 SpawnId;
+            Position Destination;
+        };
+
+        inline std::array<AmbientCreatureMove, 1> const AmbientCreatureMoves =
+        {{
+            { 125787, { 2514.38f, -5603.94f, 420.65f, 2.73855f } }    // Risen Drudge wandering 5 yards over the second Berserk buff: 9 yards toward the center
         }};
 
         // the top of the stairs behind that portal leads out to the balcony, and the gaps along the sides of the stairs
@@ -352,6 +367,7 @@ namespace AcherusOrbs
         std::array<BerserkBuffState, Positions::BerserkBuffCount> BerserkBuffs;
         std::vector<ObjectGuid> StairsBarrier;
         ObjectGuid StairsPortal;
+        std::vector<ObjectGuid> AmbientCreatures;
         std::array<ObjectGuid, PVP_TEAMS_COUNT> Raids;              // battlefield raid of each team, not stored in the database
         std::unordered_map<ObjectGuid, ObjectGuid> ResurrectQueue; // players waiting at a spirit healer for the next wave, mapped to that guide
     };
@@ -436,6 +452,8 @@ namespace AcherusOrbs
         static ObjectGuid SpawnWall(Match const& match, Map* map, Position const& position, float scale = 0.0f);
         static void SpawnStairsBarrier(Match& match, Map* map);
         static ObjectGuid SummonStairsPortal(Match const& match, Map* map);
+        static void SpawnAmbientCreatures(Match& match, Map* map);
+        static ObjectGuid SummonAmbientCreature(Match const& match, Map* map, CreatureData const& data);
         static void DespawnPreparationArea(Match& match, Map* map);
         static void DespawnCreature(Map* map, ObjectGuid& guid);
         static Position const& GetGraveyard(Match const& match, TeamId team);
