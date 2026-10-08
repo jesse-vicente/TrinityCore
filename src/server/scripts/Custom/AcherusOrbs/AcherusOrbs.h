@@ -61,6 +61,7 @@ namespace AcherusOrbs
         static constexpr uint32 GoFrostForge = 990001;
         static constexpr uint32 GoBloodForge = 990002;
         static constexpr uint32 GoUnholyForge = 990003;
+        static constexpr uint32 GoBerserkBuff = 990004;              // Berserk Buff (179905) that despawns when used
         static constexpr uint32 GoPortal = 191539;                   // Doodad_Nox_portal_purple_bossroom17, the Acherus portal by the door (outside the match phases)
         static constexpr uint32 GoPreparationWall = 990005;          // invisible PvP collision wall (display of 180322), rings the preparation domes
         static constexpr uint32 GoPoolOfBlood = 990006;              // generic copy of the Pool of Blood fishing hole (194479), on the Blood forge
@@ -149,6 +150,15 @@ namespace AcherusOrbs
         inline QuaternionData const PortalRotation = { 0.0f, 0.0f, 0.292371f, 0.956305f };
         inline Position const PortalDestination = { 2517.900879f, -5554.814453f, 444.124817f, 3.740502f };
 
+        // Berserk buffs (spell 23505) in the hall, mirrored across the axis between the faction spawns (through the door):
+        // each faction has one at the same distance from its spawn and its respawn
+        static constexpr std::size_t BerserkBuffCount = 2;
+        inline std::array<Position, BerserkBuffCount> const BerserkBuffs =
+        {{
+            { 2472.58f, -5530.56f, 420.649078f, 4.523f },
+            { 2523.22f, -5605.63f, 420.648682f, 2.947f }
+        }};
+
         // the top of the stairs behind that portal leads out to the balcony, and the gaps along the sides of the stairs
         // lead to where the client switches to The Heart of Acherus. An invisible wall closes them (left bottom, left top,
         // right top, right bottom) up to above the upper floor, so nobody jumps over it from there either
@@ -171,7 +181,7 @@ namespace AcherusOrbs
         inline std::array<Position, PVP_TEAMS_COUNT> const Respawn =
         {{
             { 2438.10f, -5707.64f, 444.61f, 1.347f },
-            { 2345.79f, -5571.24f, 444.62f, 6.068f }
+            { 2346.12f, -5571.28f, 444.62f, 6.123f }                 // mirror of the Alliance one across the axis between the spawns
         }};
     }
 
@@ -204,6 +214,7 @@ namespace AcherusOrbs
         static constexpr uint8 ReturnMaxAttempts = 10;
         static constexpr uint32 ClientPing = 25 * IN_MILLISECONDS;         // client UI script safety probe interval
         static constexpr uint32 OrbMarker = 250;                          // minimap orb marker refresh interval
+        static constexpr uint32 BuffRespawn = 180 * IN_MILLISECONDS;       // BUFF_RESPAWN_TIME of battlegrounds
     }
 
     namespace OrbPower
@@ -277,6 +288,13 @@ namespace AcherusOrbs
         uint32 Points = 0;                                          // team points scored, shown in the Flag Captures column
     };
 
+    struct BerserkBuffState
+    {
+        ObjectGuid Guid;
+        bool Armed = false;                                         // seen ready since it was spawned
+        uint32 RespawnTimer = 0;                                    // time left to respawn it
+    };
+
     struct OrbState
     {
         ObjectGuid Forge;
@@ -331,6 +349,7 @@ namespace AcherusOrbs
         std::array<ObjectGuid, PVP_TEAMS_COUNT> PreparationDomes;
         std::vector<ObjectGuid> PreparationWalls;
         ObjectGuid Portal;
+        std::array<BerserkBuffState, Positions::BerserkBuffCount> BerserkBuffs;
         std::vector<ObjectGuid> StairsBarrier;
         ObjectGuid StairsPortal;
         std::array<ObjectGuid, PVP_TEAMS_COUNT> Raids;              // battlefield raid of each team, not stored in the database
@@ -421,6 +440,8 @@ namespace AcherusOrbs
         static void DespawnCreature(Map* map, ObjectGuid& guid);
         static Position const& GetGraveyard(Match const& match, TeamId team);
         static ObjectGuid SpawnPortal(Match const& match, Map* map);
+        static void SpawnBerserkBuff(Match const& match, Map* map, std::size_t index, BerserkBuffState& buff);
+        static void UpdateBerserkBuffs(Match& match, uint32 diff);
         static void UsePortal(Match const& match, Player* player);
         void SetForgeVisuals(Match& match, OrbType orb, bool on);
         static ObjectGuid SpawnForgeObject(Match const& match, Map* map, OrbTemplate const& orbTemplate, ForgeObjectTemplate const& objectTemplate);

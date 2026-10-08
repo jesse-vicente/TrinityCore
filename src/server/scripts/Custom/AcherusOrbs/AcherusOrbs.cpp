@@ -869,6 +869,7 @@ namespace AcherusOrbs
             case MatchStatus::InProgress:
             {
                 UpdateCarriers(match, diff);
+                UpdateBerserkBuffs(match, diff);
 
                 match.TickTimer += diff;
                 if (match.TickTimer >= Scoring::TickInterval)
@@ -1287,7 +1288,11 @@ namespace AcherusOrbs
             SetForgeVisuals(match, OrbType(orb), true);
 
         if (Map* map = sMapMgr->FindMap(Ids::MapId, 0))
+        {
             match.Portal = SpawnPortal(match, map);
+            for (std::size_t i = 0; i < match.BerserkBuffs.size(); ++i)
+                SpawnBerserkBuff(match, map, i, match.BerserkBuffs[i]);
+        }
 
         UpdateWorldStates(match);
 
@@ -1776,6 +1781,13 @@ namespace AcherusOrbs
             portal->Delete();
         match.Portal.Clear();
 
+        for (BerserkBuffState& buff : match.BerserkBuffs)
+        {
+            if (GameObject* object = map->GetGameObject(buff.Guid))
+                object->Delete();
+            buff = BerserkBuffState();
+        }
+
         for (ObjectGuid const& guid : match.StairsBarrier)
         {
             if (GameObject* wall = map->GetGameObject(guid))
@@ -1817,6 +1829,76 @@ namespace AcherusOrbs
         }
 
         return portal->GetGUID();
+    }
+
+    void Manager::SpawnBerserkBuff(Match const& match, Map* map, std::size_t index, BerserkBuffState& buff)
+    {
+        buff.Guid.Clear();
+        buff.Armed = false;
+
+        Position const& position = Positions::BerserkBuffs[index];
+        GameObject* object = new GameObject();
+        if (!object->Create(map->GenerateLowGuid<HighGuid::GameObject>(), Ids::GoBerserkBuff, map, match.PhaseMask, position,
+            QuaternionData::fromEulerAnglesZYX(position.GetOrientation(), 0.0f, 0.0f), 255, GO_STATE_READY))
+        {
+            TC_LOG_ERROR("scripts", "AcherusOrbs: cannot create berserk buff gameobject {} for match {}", Ids::GoBerserkBuff, match.Id);
+            delete object;
+            buff.RespawnTimer = Timers::BuffRespawn;
+            return;
+        }
+
+        object->setActive(true);
+        object->SetVisibilityDistanceOverride(ForgeVisibility);
+        if (!map->AddToMap(object))
+        {
+            delete object;
+            buff.RespawnTimer = Timers::BuffRespawn;
+            return;
+        }
+
+        buff.Guid = object->GetGUID();
+    }
+
+    // battleground buffs are despawned and respawned by Battleground::HandleTriggerBuff. These are traps of type 1:
+    // each casts its spell, then goes GO_JUST_DEACTIVATED and GO_NOT_READY, and would arm itself again after its cooldown.
+    // A new trap also starts GO_NOT_READY, so it only counts as used after it was seen ready.
+    void Manager::UpdateBerserkBuffs(Match& match, uint32 diff)
+    {
+        Map* map = sMapMgr->FindMap(Ids::MapId, 0);
+        if (!map)
+            return;
+
+        for (std::size_t i = 0; i < match.BerserkBuffs.size(); ++i)
+        {
+            BerserkBuffState& buff = match.BerserkBuffs[i];
+            if (buff.Guid.IsEmpty())
+            {
+                if (buff.RespawnTimer > diff)
+                {
+                    buff.RespawnTimer -= diff;
+                    continue;
+                }
+
+                buff.RespawnTimer = 0;
+                SpawnBerserkBuff(match, map, i, buff);
+                continue;
+            }
+
+            if (GameObject* object = map->GetGameObject(buff.Guid))
+            {
+                LootState const state = object->getLootState();
+                if (state == GO_READY)
+                    buff.Armed = true;
+
+                if (state == GO_READY || state == GO_ACTIVATED || !buff.Armed)
+                    continue;
+
+                object->Delete();
+            }
+
+            buff.Guid.Clear();
+            buff.RespawnTimer = Timers::BuffRespawn;
+        }
     }
 
     // same rule as the Acherus teleporter (aura 54724 of NPC 29581): within 3 yards, checked every second
