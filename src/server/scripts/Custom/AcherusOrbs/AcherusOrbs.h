@@ -90,7 +90,7 @@ namespace AcherusOrbs
         static constexpr uint32 PreparationDome = 50461;             // Anti-Magic Zone: only its channel kit is used, the aura is never applied
         static constexpr uint32 StairsPortal = 42049;                // Boss Frost Portal State (dummy), on the trigger at the top of the stairs
 
-        // forge auras, on the forge triggers while the orb is ready; visual only (dummy, except 58361, see README)
+        // forge auras, on the forge triggers while the rune is ready; visual only (dummy, except 58361, see README)
         static constexpr uint32 ForgeSpiritsFrost = 31954;           // Spirit Particles, super big (DND): Spells\Ghost_state.mdx
         static constexpr uint32 ForgeBeamFrost = 32840;              // Beam (Blue): MoonBeamBlue_Impact_Base.mdx
         static constexpr uint32 ForgeBeamBlood = 32839;              // Beam (Red): MoonBeamRed_Impact_Base.mdx
@@ -103,7 +103,7 @@ namespace AcherusOrbs
         static constexpr uint32 ForgePlagueUnholy = 63319;           // Saronite Animus Formation Visual: DeathKnight_PlagueStrikeState.mdx, already large at scale 1
         static constexpr uint32 ForgeGhostStateUnholy = 60426;       // Ghost State: sc_spirits_01.mdx
 
-        // permanent carrier auras, all dummy (no stat effect). Each orb combines spirit particles (visual)
+        // permanent carrier auras, all dummy (no stat effect). Each rune combines spirit particles (visual)
         // with a Portal State; the Portal States are visible in the aura bar (unlike the Banish States, which
         // are SPELL_ATTR0_HIDDEN_CLIENTSIDE), so the client UI script can relabel them with death knight icons
         // and avoid a death knight ending up with two presence icons. All three share the same icon
@@ -114,7 +114,7 @@ namespace AcherusOrbs
 
     }
 
-    // impact kits (SpellVisual.dbc) of the death knight presences, played once when the orb is taken (they have no state kit)
+    // impact kits (SpellVisual.dbc) of the death knight presences, played once when the rune is taken (they have no state kit)
     namespace VisualKits
     {
         static constexpr uint32 CarrierFrost = 10288;                // Frost Presence (48263), visual 11115
@@ -125,7 +125,7 @@ namespace AcherusOrbs
     // battleground sounds of the 3.3.5 core (Battleground.h, BattlegroundWS.h)
     namespace Sounds
     {
-        static constexpr uint32 OrbEvent = 8174;                    // BG_WS_SOUND_ALLIANCE_FLAG_PICKED_UP: orb taken, carrier killed, orb returned
+        static constexpr uint32 OrbEvent = 8174;                    // BG_WS_SOUND_ALLIANCE_FLAG_PICKED_UP: rune taken, carrier killed, rune returned
         static constexpr uint32 AllianceWins = 8455;                // SOUND_ALLIANCE_WINS
         static constexpr uint32 HordeWins = 8454;                   // SOUND_HORDE_WINS
         static constexpr uint32 BattleStart = 3439;                 // SOUND_BG_START
@@ -140,7 +140,7 @@ namespace AcherusOrbs
 
         static constexpr uint32 AllianceScore = 2749;
         static constexpr uint32 HordeScore = 2750;
-        static constexpr uint32 AllianceBases = 2752;               // used as "orbs held"
+        static constexpr uint32 AllianceBases = 2752;               // used as "runes held"
         static constexpr uint32 HordeBases = 2753;
         static constexpr uint32 AllianceTopStats = 2769;
         static constexpr uint32 HordeTopStats = 2770;
@@ -241,7 +241,7 @@ namespace AcherusOrbs
         static constexpr uint32 ReturnRetry = 1 * IN_MILLISECONDS;
         static constexpr uint8 ReturnMaxAttempts = 10;
         static constexpr uint32 ClientPing = 25 * IN_MILLISECONDS;         // client UI script safety probe interval
-        static constexpr uint32 OrbMarker = 250;                          // minimap orb marker refresh interval
+        static constexpr uint32 OrbMarker = 250;                          // minimap rune marker refresh interval
         static constexpr uint32 BuffRespawn = 180 * IN_MILLISECONDS;       // BUFF_RESPAWN_TIME of battlegrounds
     }
 
@@ -283,13 +283,13 @@ namespace AcherusOrbs
     struct OrbTemplate
     {
         char const* Name;
-        char const* Color;                                          // chat color code of the orb name
+        char const* Color;                                          // chat color code of the rune name
         uint32 ForgeEntry;
         Position ForgePosition;
         QuaternionData ForgeRotation;
         float ForgeAuraScale;                                       // scale of the forge trigger, the forge auras are drawn at it
-        std::array<uint32, 5> ForgeAuras;                          // permanent auras of the forge trigger while the orb is ready (0 = none)
-        std::array<ForgeObjectTemplate, 3> ForgeObjects;            // gameobjects spawned on the forge while the orb is ready
+        std::array<uint32, 5> ForgeAuras;                          // permanent auras of the forge trigger while the rune is ready (0 = none)
+        std::array<ForgeObjectTemplate, 3> ForgeObjects;            // gameobjects spawned on the forge while the rune is ready
         std::array<ForgeScaledAura, 2> ForgeScaledAuras;            // auras on their own trigger, to size them apart from the others
         uint32 CarrierVisualKit;
         std::array<uint32, 3> CarrierAuras;                         // permanent auras of the carrier (0 = none)
