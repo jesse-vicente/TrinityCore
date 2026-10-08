@@ -1090,12 +1090,21 @@ namespace AcherusOrbs
                 continue;
 
             // the client hides its popup once the ghost leaves the guide, so it must not be revived either
-            Creature* guide = player->GetMap()->GetCreature(guideGuid);
+            std::vector<ObjectGuid> candidates = { guideGuid, match.PreparationSpiritGuides[itr->second.Team] };
+            candidates.insert(candidates.end(), match.SpiritGuides[itr->second.Team].begin(), match.SpiritGuides[itr->second.Team].end());
+
+            Creature* guide = nullptr;
+            for (ObjectGuid const& candidate : candidates)
+            {
+                Creature* creature = player->GetMap()->GetCreature(candidate);
+                if (creature && player->GetDistance(creature) <= SpiritHealerRange)
+                {
+                    guide = creature;
+                    break;
+                }
+            }
+
             if (!guide)
-                guide = player->GetMap()->GetCreature(match.SpiritGuides[itr->second.Team]);
-            if (!guide)
-                guide = player->GetMap()->GetCreature(match.PreparationSpiritGuides[itr->second.Team]);
-            if (!guide || player->GetDistance(guide) > SpiritHealerRange)
                 continue;
 
             MatchPlayer& matchPlayer = itr->second;
@@ -1472,13 +1481,34 @@ namespace AcherusOrbs
             return false;
 
         // during the preparation the graveyard is inside the starting area, so nobody starts outside of it
-        player->NearTeleportTo(GetGraveyard(*match, itr->second.Team));
+        player->NearTeleportTo(GetGraveyard(*match, itr->second.Team, player));
         return true;
     }
 
-    Position const& Manager::GetGraveyard(Match const& match, TeamId team)
+    // like BattlegroundAB::GetClosestGraveyard: the faction graveyard closest (2D) to where the ghost is released
+    Position const& Manager::GetGraveyard(Match const& match, TeamId team, Player const* player)
     {
-        return match.Status == MatchStatus::Preparation ? Positions::Spawn[team] : Positions::Respawn[team];
+        if (match.Status == MatchStatus::Preparation)
+            return Positions::Spawn[team];
+
+        Position const* closest = &Positions::Respawn[team].front();
+        for (Position const& graveyard : Positions::Respawn[team])
+            if (player->GetExactDist2dSq(graveyard) < player->GetExactDist2dSq(*closest))
+                closest = &graveyard;
+
+        return *closest;
+    }
+
+    bool Manager::IsTeamSpiritGuide(Match const& match, TeamId team, ObjectGuid guid)
+    {
+        if (match.PreparationSpiritGuides[team] == guid)
+            return true;
+
+        for (ObjectGuid const& guide : match.SpiritGuides[team])
+            if (guide == guid)
+                return true;
+
+        return false;
     }
 
     void Manager::RestorePhase(Player* player)
@@ -1532,7 +1562,8 @@ namespace AcherusOrbs
         // starting area spirit guides only exist during the preparation, like the ones inside the Warsong Gulch bases
         for (uint8 team = 0; team < PVP_TEAMS_COUNT; ++team)
         {
-            match.SpiritGuides[team] = SummonSpiritGuide(match, map, Positions::Respawn[team], TeamId(team));
+            for (std::size_t i = 0; i < Positions::RespawnCount; ++i)
+                match.SpiritGuides[team][i] = SummonSpiritGuide(match, map, Positions::Respawn[team][i], TeamId(team));
             match.PreparationSpiritGuides[team] = SummonSpiritGuide(match, map, Positions::Spawn[team], TeamId(team));
             match.PreparationDomes[team] = SummonPreparationDome(match, map, Positions::Spawn[team]);
             SpawnPreparationWalls(match, map, Positions::Spawn[team]);
@@ -1781,7 +1812,7 @@ namespace AcherusOrbs
             return false;
 
         TeamId const team = itr->second.Team;
-        if (match->SpiritGuides[team] != spiritHealer->GetGUID() && match->PreparationSpiritGuides[team] != spiritHealer->GetGUID())
+        if (!IsTeamSpiritGuide(*match, team, spiritHealer->GetGUID()))
             return false;
 
         // native timer, so the client shows its AREA_SPIRIT_HEAL popup (GetAreaSpiritHealerTime) while a ghost
@@ -1804,7 +1835,7 @@ namespace AcherusOrbs
             return;
 
         TeamId const team = itr->second.Team;
-        if (match->SpiritGuides[team] != spiritHealer->GetGUID() && match->PreparationSpiritGuides[team] != spiritHealer->GetGUID())
+        if (!IsTeamSpiritGuide(*match, team, spiritHealer->GetGUID()))
             return;
 
         handled = true;
@@ -1860,8 +1891,9 @@ namespace AcherusOrbs
         match.StairsBarrier.clear();
         DespawnCreature(map, match.StairsPortal);
 
-        for (ObjectGuid& guid : match.SpiritGuides)
-            DespawnCreature(map, guid);
+        for (std::array<ObjectGuid, Positions::RespawnCount>& guides : match.SpiritGuides)
+            for (ObjectGuid& guid : guides)
+                DespawnCreature(map, guid);
 
         for (ObjectGuid& guid : match.AmbientCreatures)
             DespawnCreature(map, guid);

@@ -193,10 +193,19 @@ namespace AcherusOrbs
             { 2397.17f, -5581.70f, 420.65f, 6.177f }                 // Horde
         }};
 
-        inline std::array<Position, PVP_TEAMS_COUNT> const Respawn =
+        // graveyards of each faction on the upper floor, each one a spirit guide; the Horde ones mirror the Alliance
+        // ones across the axis between the spawns
+        static constexpr std::size_t RespawnCount = 2;
+        inline std::array<std::array<Position, RespawnCount>, PVP_TEAMS_COUNT> const Respawn =
         {{
-            { 2438.10f, -5707.64f, 444.61f, 1.347f },
-            { 2346.12f, -5571.28f, 444.62f, 6.123f }                 // mirror of the Alliance one across the axis between the spawns
+            {{
+                { 2438.10f, -5707.64f, 444.61f, 1.347f },
+                { 2574.63f, -5615.65f, 444.613373f, 2.950f }
+            }},
+            {{
+                { 2346.12f, -5571.28f, 444.62f, 6.123f },
+                { 2482.54f, -5479.14f, 444.615540f, 4.520f }
+            }}
         }};
     }
 
@@ -359,7 +368,7 @@ namespace AcherusOrbs
         Optional<TeamId> Winner;                                    // TEAM_NEUTRAL = draw
         std::unordered_map<ObjectGuid, MatchPlayer> Players;
         std::array<OrbState, MAX_ORBS> Orbs;
-        std::array<ObjectGuid, PVP_TEAMS_COUNT> SpiritGuides;
+        std::array<std::array<ObjectGuid, Positions::RespawnCount>, PVP_TEAMS_COUNT> SpiritGuides;
         std::array<ObjectGuid, PVP_TEAMS_COUNT> PreparationSpiritGuides;
         std::array<ObjectGuid, PVP_TEAMS_COUNT> PreparationDomes;
         std::vector<ObjectGuid> PreparationWalls;
@@ -456,7 +465,8 @@ namespace AcherusOrbs
         static ObjectGuid SummonAmbientCreature(Match const& match, Map* map, CreatureData const& data);
         static void DespawnPreparationArea(Match& match, Map* map);
         static void DespawnCreature(Map* map, ObjectGuid& guid);
-        static Position const& GetGraveyard(Match const& match, TeamId team);
+        static Position const& GetGraveyard(Match const& match, TeamId team, Player const* player);
+        static bool IsTeamSpiritGuide(Match const& match, TeamId team, ObjectGuid guid);
         static ObjectGuid SpawnPortal(Match const& match, Map* map);
         static void SpawnBerserkBuff(Match const& match, Map* map, std::size_t index, BerserkBuffState& buff);
         static void UpdateBerserkBuffs(Match& match, uint32 diff);
