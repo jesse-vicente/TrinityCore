@@ -175,7 +175,11 @@ Testado em jogo com os comandos `.debug bgui`, que eram um patch local de `cs_de
   cada 0,25 s pelo canal de addon messages (`AcherusBG_Orbs.Update`). O cliente reconstrói a posição do jogador a cada
   frame via `GetPlayerMapPosition` (transformação mundo↔mapa **fixa** no Lua, valores do `WorldMapArea.dbc` do cliente)
   para o movimento ficar suave, segue o unit token dos portadores do mesmo time e converte para o minimapa com o span
-  de zoom (`MinimapSize` do Astrolabe, já ajustado ao Acherus), prendendo os ícones na borda.
+  de zoom (`MinimapSize` do Astrolabe, já ajustado ao Acherus), prendendo os ícones na borda. Com o minimapa rotativo
+  (`rotateMinimap`), os ícones giram junto pelo `-GetPlayerFacing()` (a matemática do cliente usa a origem do mapa no
+  topo-esquerda, y para baixo, então o sinal é invertido em relação aos offsets de tela do `SetPoint`). O nível dos
+  marcadores é `Minimap+1` (logo acima do terreno), abaixo dos botões nativos do minimapa, que ficam em `Minimap+2/+3`
+  (BG, tracking, zoom, mapa, correio, LFG), para que o ícone preso na borda não cubra os botões.
 - **Mensagens de orbe:** `CHAT_MSG_RAID_BOSS_EMOTE`, que o cliente mostra em amarelo no centro da tela e também no
   chat. O nome do orbe vai colorido com códigos `|c` (Frost azul, Blood vermelho, Unholy verde).
 - **Aura do portador:** os Portal States (33338/33339/33340) aparecem na barra de buffs e o `acherus_orbs_ui.lua` os

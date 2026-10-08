@@ -443,7 +443,9 @@ AcherusBG_Orbs = { data = nil, icons = {} }
 local function CreateMarker(texture)
     local frame = CreateFrame("Frame", nil, Minimap)
     frame:SetSize(14, 14)
-    frame:SetFrameLevel(Minimap:GetFrameLevel() + 5)
+    -- one level above the map terrain, below every minimap button: the Blizzard buttons sit at
+    -- MinimapBackdrop+1/+2 (Minimap+2/+3) and MiniMapInstanceDifficulty at MinimapCluster+10
+    frame:SetFrameLevel(Minimap:GetFrameLevel() + 1)
 
     frame.icon = frame:CreateTexture(nil, "ARTWORK")
     frame.icon:SetAllPoints()
@@ -509,8 +511,10 @@ orbDriver:SetScript("OnUpdate", function()
     local zoom = Minimap:GetZoom() or 0
     local pixelsPerYard = Minimap:GetWidth() / (MINIMAP_WORLD_SPAN[zoom] or 250)
 
+    -- rotating minimap: the client spins the map by the player's facing, but its math runs with the map
+    -- origin at the top-left (y down) while our offsets are screen space (y up), so the sign is flipped
     local rotate = GetCVar("rotateMinimap") ~= "0"
-    local facing = rotate and (GetPlayerFacing() or 0) or 0
+    local facing = rotate and -(GetPlayerFacing() or 0) or 0
     local sinFacing, cosFacing = math.sin(facing), math.cos(facing)
 
     -- clamp the markers to the minimap edge (icon half size plus a small margin), so far ones stay on the rim
