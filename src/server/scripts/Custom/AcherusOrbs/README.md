@@ -359,7 +359,9 @@ fora do agendador de checks) e então envia o Lua de UI por addon messages.
 O payload **não casa texto em inglês** (clientes em outro idioma, ou com patch de tradução, quebrariam):
 o nome do battleground é pedido à própria API (`GetBattlefieldStatus`, que devolve o nome localizado que o
 minimapa/lista exibem), o rótulo "Bases" é trocado reescrevendo o primeiro `<rótulo>:` de cada linha do topo
-(`AlwaysUpFrame<n>Text`, sem casar texto) e a coluna de stat é trocada envolvendo o `GetBattlefieldStatInfo`
+(`AlwaysUpFrame<n>Text`, sem casar texto) **só dentro da partida** — na fila, o world state da zona em que o
+jogador está (EPL, por exemplo) não é tocado (`IsInAcherusMatch` checa o status "active") — e a coluna de
+stat é trocada envolvendo o `GetBattlefieldStatInfo`
 (rótulo "Points", tooltip próprio e ícone vazio — o Eye of the Storm tem 1 coluna, e o ícone vazio faz o
 cliente desenhar só o número, sem a flag e sem o "x" do EotS). O guard da EotS real também compara o
 `GetRealZoneText()` localizado com o nome vindo da API, então continua válido em qualquer locale. Como o

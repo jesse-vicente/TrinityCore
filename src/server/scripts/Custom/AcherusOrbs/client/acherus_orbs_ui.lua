@@ -27,6 +27,24 @@ local function LocalizedAcherusName()
     return fallback
 end
 
+-- The server keeps AcherusBG_UI.active on both while queued and in the match. The top bar world states
+-- and the scoreboard column, however, only exist inside the match: while merely queued in another zone
+-- (Eastern Plaguelands, for example) that zone's own world state UI must not be touched. The fake Eye of
+-- the Storm status is "active" only in the match (it is "queued" otherwise).
+local function IsInAcherusMatch()
+    local name = LocalizedAcherusName()
+    if not name then
+        return false
+    end
+    for i = 1, (MAX_BATTLEFIELD_QUEUES or 2) do
+        local status, mapName = GetBattlefieldStatus(i)
+        if status == "active" and mapName == name then
+            return true
+        end
+    end
+    return false
+end
+
 -- The server only turns the relabel on while the player is in the Heart of Acherus queue or match (AcherusBG_UI.active).
 -- Belt-and-suspenders: never touch the real Eye of the Storm instance, even if a toggle was missed. The name
 -- comparison uses the localized name above, so it holds on every client locale.
@@ -47,7 +65,7 @@ local ORB_POINTS_TOOLTIP = "Points earned by holding runes and killing enemies."
 if GetBattlefieldStatInfo then
     local OrigBattlefieldStatInfo = GetBattlefieldStatInfo
     GetBattlefieldStatInfo = function(index)
-        if AcherusBG_UI.active and not IsRealEyeOfTheStorm() and index == 1 then
+        if AcherusBG_UI.active and IsInAcherusMatch() and index == 1 then
             return "Points", "", ORB_POINTS_TOOLTIP
         end
         return OrigBattlefieldStatInfo(index)
@@ -171,9 +189,11 @@ local function RelabelAll()
         return
     end
 
-    -- top bar label, locale independent (no text matching); the score column is handled by the
-    -- GetBattlefieldStatInfo wrapper above
-    FixAlwaysUp()
+    -- top bar label, locale independent (no text matching), only inside the match; the score column is
+    -- handled by the GetBattlefieldStatInfo wrapper above
+    if IsInAcherusMatch() then
+        FixAlwaysUp()
+    end
 
     -- battleground frames, minimap tooltip and dropdown title: the name comes from BattlemasterList.dbc, so
     -- match the localized name the client itself reports (nil outside the queue/match: nothing to relabel)
