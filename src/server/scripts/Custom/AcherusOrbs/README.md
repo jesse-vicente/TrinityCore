@@ -153,7 +153,8 @@ Testado em jogo com os comandos `.debug bgui`, que eram um patch local de `cs_de
   partida o `StartTimer` conta só o tempo decorrido de combate, sem a preparação. O cliente mostra os dois tempos sem
   segundos, então menos de 1 minuto aparece vazio. Com esse status, o cliente também passa a esperar a coluna do EotS
   (Flag Captures) no placar: cada jogador precisa mandar 1 stat, senão aparece lixo de memória. A coluna mostra os
-  pontos que o jogador fez para o time (ticks como portador + bônus de kill). O cliente deixa o valor 0 em branco.
+  pontos que o jogador fez para o time (ticks como portador + bônus de kill); o payload a relabela como "Points"
+  (tooltip próprio, sem o ícone de flag do EotS) e, por usar o caminho sem ícone do cliente, valores 0 aparecem como `0`.
 - **Spirit Healer:** funciona como nas BGs. Ao entrar no range do spirit guide com o ghost, o cliente manda
   `CMSG_AREA_SPIRIT_HEALER_QUEUE` (`AREA_SPIRIT_HEALER_IN_RANGE` → `AcceptAreaSpiritHeal()` + `StaticPopup_Show("AREA_SPIRIT_HEAL")`),
   o módulo responde com `SMSG_AREA_SPIRIT_HEALER_TIME` (o mesmo `TimeLeft` da BG) e o popup nativo `AREA_SPIRIT_HEAL` mostra
@@ -169,12 +170,19 @@ Testado em jogo com os comandos `.debug bgui`, que eram um patch local de `cs_de
   fake (active ou queued) e reenvia o active assim que o jogador entra no mundo. Clicar no ícone abre o placar. O nome
   "Eye of the Storm" vem do `BattlemasterList.dbc` do cliente e não pode ser trocado sem patch.
 - **Marcadores das orbs no minimapa:** ícones desenhados por Lua (payload do cliente) parentados ao `Minimap`, um por
-  orb, com o ícone da presença de DK (Frost/Blood/Unholy) recortado via `SetTexCoord` (tira a borda clara embutida na
-  textura). O servidor manda a posição de mundo do jogador e de cada orb (do portador, ou da forja se não portado) a
+  orb, com o ícone da presença de DK (Frost/Blood/Unholy) em 18×18 e recortado via `SetTexCoord` em texels inteiros do
+  ícone de 64×64 (0.0625/0.9375, tira a borda clara embutida sem misturar a linha de borda fracionária). Como o 3.3.5
+  não expõe filtro/mipmap/snapping por textura, o marcador só é re-ancorado quando anda ≥1 px, para não re-rasterizar o
+  ícone reduzido em offsets sub-pixel a cada frame (é isso que fazia serrilhar/cintilar ao mover). O servidor manda a
+  posição de mundo do jogador e de cada orb (do portador, ou da forja se não portado) a
   cada 0,25 s pelo canal de addon messages (`AcherusBG_Orbs.Update`). O cliente reconstrói a posição do jogador a cada
   frame via `GetPlayerMapPosition` (transformação mundo↔mapa **fixa** no Lua, valores do `WorldMapArea.dbc` do cliente)
   para o movimento ficar suave, segue o unit token dos portadores do mesmo time e converte para o minimapa com o span
-  de zoom (`MinimapSize` do Astrolabe, já ajustado ao Acherus), prendendo os ícones na borda.
+  de zoom (`MinimapSize` do Astrolabe, já ajustado ao Acherus), prendendo os ícones na borda. Com o minimapa rotativo
+  (`rotateMinimap`), os ícones giram junto pelo `-GetPlayerFacing()` (a matemática do cliente usa a origem do mapa no
+  topo-esquerda, y para baixo, então o sinal é invertido em relação aos offsets de tela do `SetPoint`). O nível dos
+  marcadores é `Minimap+1` (logo acima do terreno), abaixo dos botões nativos do minimapa, que ficam em `Minimap+2/+3`
+  (BG, tracking, zoom, mapa, correio, LFG), para que o ícone preso na borda não cubra os botões.
 - **Mensagens de orbe:** `CHAT_MSG_RAID_BOSS_EMOTE`, que o cliente mostra em amarelo no centro da tela e também no
   chat. O nome do orbe vai colorido com códigos `|c` (Frost azul, Blood vermelho, Unholy verde).
 - **Aura do portador:** os Portal States (33338/33339/33340) aparecem na barra de buffs e o `acherus_orbs_ui.lua` os
@@ -335,9 +343,12 @@ fora do agendador de checks) e então envia o Lua de UI por addon messages.
 O payload **não casa texto em inglês** (clientes em outro idioma, ou com patch de tradução, quebrariam):
 o nome do battleground é pedido à própria API (`GetBattlefieldStatus`, que devolve o nome localizado que o
 minimapa/lista exibem), o rótulo "Bases" é trocado reescrevendo o primeiro `<rótulo>:` de cada linha do topo
-(`AlwaysUpFrame<n>Text`, sem casar texto) e a coluna "Flag Captures" é atribuída por índice
-(`WorldStateScoreColumn<i>Text`, o Eye of the Storm tem 1 coluna). O guard da EotS real também compara o
-`GetRealZoneText()` localizado com o nome vindo da API, então continua válido em qualquer locale.
+(`AlwaysUpFrame<n>Text`, sem casar texto) e a coluna de stat é trocada envolvendo o `GetBattlefieldStatInfo`
+(rótulo "Points", tooltip próprio e ícone vazio — o Eye of the Storm tem 1 coluna, e o ícone vazio faz o
+cliente desenhar só o número, sem a flag e sem o "x" do EotS). O guard da EotS real também compara o
+`GetRealZoneText()` localizado com o nome vindo da API, então continua válido em qualquer locale. Como o
+caminho "sem ícone" do cliente sempre escreve o valor, linhas com 0 pontos mostram `0` (antes ficavam em
+branco).
 
 1. `Warden::SendLua` (novo no core) envia um `LUA_EVAL_CHECK` único, cifrado, quando o módulo chama. O
    bootstrap do listener vai em **dois evals** (cada um abaixo do teto de 166 chars do Lua do Warden): o

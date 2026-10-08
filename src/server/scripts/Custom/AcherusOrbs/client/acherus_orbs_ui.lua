@@ -39,6 +39,21 @@ local function IsRealEyeOfTheStorm()
     return name ~= nil and GetRealZoneText() == name
 end
 
+-- The scoreboard stat column comes from GetBattlefieldStatInfo (localized text, tooltip and the Eye of the
+-- Storm flag icon). Swap it for our own column while the relabel is active: the empty icon makes the client
+-- draw the plain number (no flag, no "x") and the header uses our label and tooltip.
+local ORB_POINTS_TOOLTIP = "Points earned by holding orbs and killing enemies."
+
+if GetBattlefieldStatInfo then
+    local OrigBattlefieldStatInfo = GetBattlefieldStatInfo
+    GetBattlefieldStatInfo = function(index)
+        if AcherusBG_UI.active and not IsRealEyeOfTheStorm() and index == 1 then
+            return "Points", "", ORB_POINTS_TOOLTIP
+        end
+        return OrigBattlefieldStatInfo(index)
+    end
+end
+
 -- Replaces an exact substring in every FontString region of a frame and its direct children.
 local function Relabel(frame, from, to)
     if not frame or not frame.GetRegions then
@@ -151,26 +166,14 @@ local function FixAlwaysUp()
     end
 end
 
--- The score column header comes from the battleground stats (localized). The Eye of the Storm has a single
--- stat column, so set it by index instead of matching "Flag Captures".
-local function FixScoreColumns()
-    local num = GetNumBattlefieldStats and GetNumBattlefieldStats() or 0
-    for i = 1, num do
-        local fs = _G["WorldStateScoreColumn" .. i .. "Text"]
-        if fs and fs.SetText then
-            fs:SetText("Points")
-        end
-    end
-end
-
 local function RelabelAll()
     if not AcherusBG_UI.active or IsRealEyeOfTheStorm() then
         return
     end
 
-    -- top bar label and scoreboard column, both locale independent (no text matching)
+    -- top bar label, locale independent (no text matching); the score column is handled by the
+    -- GetBattlefieldStatInfo wrapper above
     FixAlwaysUp()
-    FixScoreColumns()
 
     -- battleground frames, minimap tooltip and dropdown title: the name comes from BattlemasterList.dbc, so
     -- match the localized name the client itself reports (nil outside the queue/match: nothing to relabel)
@@ -439,14 +442,17 @@ AcherusBG_Orbs = { data = nil, icons = {} }
 
 local function CreateMarker(texture)
     local frame = CreateFrame("Frame", nil, Minimap)
-    frame:SetSize(14, 14)
-    frame:SetFrameLevel(Minimap:GetFrameLevel() + 5)
+    frame:SetSize(18, 18)
+    -- one level above the map terrain, below every minimap button: the Blizzard buttons sit at
+    -- MinimapBackdrop+1/+2 (Minimap+2/+3) and MiniMapInstanceDifficulty at MinimapCluster+10
+    frame:SetFrameLevel(Minimap:GetFrameLevel() + 1)
 
     frame.icon = frame:CreateTexture(nil, "ARTWORK")
     frame.icon:SetAllPoints()
     frame.icon:SetTexture(texture)
-    -- spell icons carry a light border baked into the texture; crop it off (the usual 7% trim)
-    frame.icon:SetTexCoord(0.07, 0.93, 0.07, 0.93)
+    -- spell icons carry a light border baked into the texture; crop it off on whole texels of the 64x64
+    -- icon (4/64 and 60/64), so the downscale does not blend a fractional border row into the edge
+    frame.icon:SetTexCoord(0.0625, 0.9375, 0.0625, 0.9375)
 
     frame:Hide()
     return frame
@@ -506,12 +512,14 @@ orbDriver:SetScript("OnUpdate", function()
     local zoom = Minimap:GetZoom() or 0
     local pixelsPerYard = Minimap:GetWidth() / (MINIMAP_WORLD_SPAN[zoom] or 250)
 
+    -- rotating minimap: the client spins the map by the player's facing, but its math runs with the map
+    -- origin at the top-left (y down) while our offsets are screen space (y up), so the sign is flipped
     local rotate = GetCVar("rotateMinimap") ~= "0"
-    local facing = rotate and (GetPlayerFacing() or 0) or 0
+    local facing = rotate and -(GetPlayerFacing() or 0) or 0
     local sinFacing, cosFacing = math.sin(facing), math.cos(facing)
 
     -- clamp the markers to the minimap edge (icon half size plus a small margin), so far ones stay on the rim
-    local margin = 9
+    local margin = 11
     local halfW = Minimap:GetWidth() / 2 - margin
     local halfH = Minimap:GetHeight() / 2 - margin
     local isSquare = GetMinimapShape and GetMinimapShape() == "SQUARE"
@@ -532,6 +540,13 @@ orbDriver:SetScript("OnUpdate", function()
             local factor = maxDist / dist
             dx, dy = dx * factor, dy * factor
         end
+
+        -- re-anchor only once the marker moved at least a pixel: re-rasterizing the downscaled icon at
+        -- sub-pixel offsets every frame is what makes it shimmer while moving
+        if icon:IsShown() and icon.lastX and math.abs(dx - icon.lastX) < 1 and math.abs(dy - icon.lastY) < 1 then
+            return
+        end
+        icon.lastX, icon.lastY = dx, dy
 
         icon:ClearAllPoints()
         icon:SetPoint("CENTER", Minimap, "CENTER", dx, dy)
