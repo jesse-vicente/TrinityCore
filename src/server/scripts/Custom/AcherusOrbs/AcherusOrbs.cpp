@@ -199,6 +199,22 @@ namespace AcherusOrbs
         _clientLuaFile[PAYLOAD_LOGIN] = sConfigMgr->GetStringDefault("AcherusOrbs.ClientLuaFile", "");
         _clientLuaFile[PAYLOAD_MATCH] = sConfigMgr->GetStringDefault("AcherusOrbs.ClientMatchLuaFile", "");
         LoadClientScript();
+
+        uint32 const mountMethod = sConfigMgr->GetIntDefault("AcherusOrbs.MountMethod", 0);
+        _mountMethod = mountMethod < uint32(MountMethod::Max) ? MountMethod(mountMethod) : MountMethod::None;
+        if (mountMethod >= uint32(MountMethod::Max))
+            TC_LOG_ERROR("scripts", "AcherusOrbs: unknown AcherusOrbs.MountMethod {}, mounts disabled in the hall", mountMethod);
+
+        // every method so far has a client side, in the match part
+        if (_mountMethod != MountMethod::None && _clientScript[PAYLOAD_MATCH].empty())
+        {
+            TC_LOG_ERROR("scripts", "AcherusOrbs: AcherusOrbs.MountMethod {} needs the client UI match part (AcherusOrbs.ClientUi, AcherusOrbs.ClientMatchLuaFile), mounts disabled in the hall", mountMethod);
+            _mountMethod = MountMethod::None;
+        }
+
+        // the match part reads the method from this global, set again each time the part is delivered
+        if (!_clientScript[PAYLOAD_MATCH].empty())
+            _clientScript[PAYLOAD_MATCH].insert(0, Trinity::StringFormat("AcherusBG_MountMethod={}\n", uint32(_mountMethod)));
     }
 
     // the client UI scripts are ordinary .lua files read at startup and on .reload config
@@ -503,6 +519,13 @@ namespace AcherusOrbs
             return;
 
         std::string const body = msg.substr(tab + 1);
+        if (body == "mount")
+        {
+            if (_mountMethod == MountMethod::Frame)
+                OnMountRequest(player);
+            return;
+        }
+
         ObjectGuid const guid = player->GetGUID();
 
         // PLAYER_LOGOUT fires on both a real logout and a /reload. Mark the client dirty and clear the applied
@@ -1605,6 +1628,7 @@ namespace AcherusOrbs
 
         RestorePhase(player);
         player->RemoveAurasDueToSpell(Spells::DominionOverAcherus);
+        player->RemoveAurasDueToSpell(Spells::AcherusDeathcharger);
 
         if (mode != RemoveMode::TeleportOut)
             return;
@@ -1633,10 +1657,9 @@ namespace AcherusOrbs
 
         player->RemoveAurasDueToSpell(Spells::UndyingResolve);
 
-        // every participant runs like the death knights of Acherus, mounts are not allowed indoors. Same area as the
-        // spell_area entry; the core removes it from others when they change area, and it is given back here
-        if (player->IsAlive() && player->GetAreaId() == Ids::HallAreaId && !player->HasAura(Spells::DominionOverAcherus))
-            player->AddAura(Spells::DominionOverAcherus, player);
+        // the death knights of Acherus get +75% run speed in the hall (spell_area, quest 12657); nobody keeps it in a
+        // match, players ride their mounts instead. spell_area gives it back on area changes, so it is removed here
+        player->RemoveAurasDueToSpell(Spells::DominionOverAcherus);
 
         // the whole map is a sanctuary (AreaTableEntry::IsSanctuary), also covers players that were already in Acherus when they joined
         if (IsSanctuaryDisabled(player) && player->IsInSanctuary())
@@ -1651,6 +1674,51 @@ namespace AcherusOrbs
 
     bool Manager::IsSanctuaryDisabled(Player const* player) const
     {
+        Match const* match = GetMatch(player->GetGUID());
+        return match && match->Status != MatchStatus::Ended && player->GetMapId() == Ids::MapId;
+    }
+
+    // the client refuses mount spells indoors on its own (the mount buttons are disabled in the hall and nothing
+    // reaches the server), so the client UI script shows a mount button during a match and the server casts the
+    // Acherus Deathcharger itself, with its usual cast time and checks; the hall counts as outdoors during a match
+    // (IsOutdoorsForced). Pressing it while mounted dismounts, like a mount spell.
+    void Manager::OnMountRequest(Player* player)
+    {
+        if (player->IsMounted())
+        {
+            player->RemoveAurasByType(SPELL_AURA_MOUNTED);
+            player->Dismount();
+            return;
+        }
+
+        // the client ignores the cast results of a cast it did not start, so the usual refusals are checked here and
+        // shown like the forge errors, with the client's own wording
+        Match const* match = GetMatch(player->GetGUID());
+        if (!match || !IsOutdoorsForced(player))
+            SendUseError(player, "You can only mount here during the battle.");
+        else if (!player->IsAlive())
+            SendUseError(player, "You are dead.");
+        else if (GetCarriedOrb(*match, player->GetGUID()))
+            SendUseError(player, "You can't mount while carrying a rune.");
+        else if (player->IsInCombat())
+            SendUseError(player, "You are in combat.");
+        else if (player->isMoving())
+            SendUseError(player, "Can't do that while moving.");
+        else if (player->IsInDisallowedMountForm())
+            SendUseError(player, "You can't mount while shapeshifted.");
+        else if (player->IsNonMeleeSpellCast(false))
+            SendUseError(player, "Another action is in progress.");
+        else
+            player->CastSpell(player, Spells::AcherusDeathcharger, false);
+    }
+
+    // the hall is indoors, which forbids mounts and the other outdoors-only spells; with a mount method, inside a match
+    // it counts as outdoors, like the battlegrounds, while the real Acherus keeps its rule
+    bool Manager::IsOutdoorsForced(Player const* player) const
+    {
+        if (_mountMethod == MountMethod::None)
+            return false;
+
         Match const* match = GetMatch(player->GetGUID());
         return match && match->Status != MatchStatus::Ended && player->GetMapId() == Ids::MapId;
     }
@@ -2720,6 +2788,7 @@ namespace AcherusOrbs
 
             RestorePhase(player);
             player->RemoveAurasDueToSpell(Spells::DominionOverAcherus);
+            player->RemoveAurasDueToSpell(Spells::AcherusDeathcharger);
             if (!player->TeleportTo(pending.Destination))
                 TC_LOG_ERROR("scripts", "AcherusOrbs: teleport of {} back to map {} refused (attempt {})", player->GetName(), pending.Destination.GetMapId(), pending.Attempts);
             ++itr;

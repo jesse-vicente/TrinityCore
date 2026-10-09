@@ -390,6 +390,179 @@ function AcherusBG_Orbs.Update(px, py, fx, fy, fName, bx, by, bName, ux, uy, uNa
     }
 end
 
+-- ---------------------------------------------------------------------------- mount methods
+-- The client refuses mount spells indoors on its own: in the hall the mount buttons are disabled and nothing reaches
+-- the server. The server picks how players mount in the hall (AcherusOrbs.MountMethod) and puts its id in
+-- AcherusBG_MountMethod at the top of this payload; each method below only acts while its id is the active one.
+
+local MOUNT_METHOD_FRAME = 1
+
+-- ---------------------------------------------------------------------------- mount method 1: frame
+-- During a match this button asks the server for the Acherus Deathcharger instead; the server casts it
+-- (usual cast time, combat and movement rules), or dismounts the player when mounted. Bindable with
+-- /click AcherusBGMountButton. Dragging it moves it; the position is kept in a client CVar (Config.wtf), since the
+-- script has no SavedVariables and the layout cache does not restore frames created after the login.
+
+local MOUNT_SPELL = 48778
+local MOUNT_BUTTON_SIZE = 56
+local MOUNT_BUTTON_Y = 220 -- default, from the bottom of the screen, above the action bars
+local MOUNT_POSITION_CVAR = "acherusMountButton"
+
+local mountButton = CreateFrame("Button", "AcherusBGMountButton", UIParent)
+mountButton:SetWidth(MOUNT_BUTTON_SIZE)
+mountButton:SetHeight(MOUNT_BUTTON_SIZE)
+mountButton:SetClampedToScreen(true)
+mountButton:SetMovable(true)
+mountButton:RegisterForDrag("LeftButton")
+mountButton:Hide()
+
+-- registering an existing CVar (after a /reload) may fail, reading and writing are guarded on their own
+if RegisterCVar then
+    pcall(RegisterCVar, MOUNT_POSITION_CVAR, "")
+end
+
+-- the saved position is "left,bottom" in UIParent coordinates
+local function PlaceMountButton()
+    mountButton:ClearAllPoints()
+    local ok, saved = pcall(GetCVar, MOUNT_POSITION_CVAR)
+    local left, bottom = string.match(ok and saved or "", "^(-?[%d%.]+),(-?[%d%.]+)$")
+    if left and bottom then
+        mountButton:SetPoint("BOTTOMLEFT", UIParent, "BOTTOMLEFT", tonumber(left), tonumber(bottom))
+    else
+        mountButton:SetPoint("BOTTOM", UIParent, "BOTTOM", 0, MOUNT_BUTTON_Y)
+    end
+end
+
+PlaceMountButton()
+
+mountButton:SetScript("OnDragStart", function(self)
+    self:StartMoving()
+end)
+
+mountButton:SetScript("OnDragStop", function(self)
+    self:StopMovingOrSizing()
+    self:SetUserPlaced(false)
+    local left, bottom = self:GetLeft(), self:GetBottom()
+    if left and bottom then
+        pcall(SetCVar, MOUNT_POSITION_CVAR, string.format("%.1f,%.1f", left, bottom))
+        self:ClearAllPoints()
+        self:SetPoint("BOTTOMLEFT", UIParent, "BOTTOMLEFT", left, bottom)
+    end
+end)
+
+local mountIcon = mountButton:CreateTexture(nil, "BACKGROUND")
+mountIcon:SetAllPoints(mountButton)
+mountIcon:SetTexture(select(3, GetSpellInfo(MOUNT_SPELL)))
+
+mountButton:SetPushedTexture("Interface\\Buttons\\UI-Quickslot-Depress")
+mountButton:SetHighlightTexture("Interface\\Buttons\\ButtonHilight-Square", "ADD")
+
+local mountLabel = mountButton:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+mountLabel:SetPoint("TOP", mountButton, "BOTTOM", 0, -2)
+mountLabel:SetText(GetSpellInfo(MOUNT_SPELL) or "Acherus Deathcharger")
+
+mountButton:SetScript("OnClick", function()
+    -- a whisper to self reaches the server for every player (the GUILD channel does not send without a guild)
+    SendAddonMessage('AcherusBG', 'mount', 'WHISPER', UnitName('player'))
+end)
+
+mountButton:SetScript("OnEnter", function(self)
+    GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
+    GameTooltip:SetText(GetSpellInfo(MOUNT_SPELL) or "Acherus Deathcharger", 1, 1, 1)
+    GameTooltip:AddLine("Summons or dismisses your Acherus Deathcharger. This is a very fast mount.", nil, nil, nil, true)
+    GameTooltip:AddLine("Usable anywhere in the Heart of Acherus.", 0, 1, 0, true)
+    GameTooltip:Show()
+end)
+
+mountButton:SetScript("OnLeave", function()
+    GameTooltip:Hide()
+end)
+
+-- the rune carrier aura (see ORB_AURAS), death, combat and the forms that forbid mounts (druid forms, Ghost Wolf)
+-- grey the icon out like an unusable action; it stays clickable and the server tells why. Mounted, it dismounts.
+local function CanMount()
+    if UnitIsDeadOrGhost("player") or UnitAffectingCombat("player") then
+        return false
+    end
+
+    local _, class = UnitClass("player")
+    if (class == "DRUID" or class == "SHAMAN") and GetShapeshiftForm() ~= 0 then
+        return false
+    end
+
+    for spellName in pairs(ORB_AURAS) do
+        if UnitBuff("player", spellName) then
+            return false
+        end
+    end
+    return true
+end
+
+local function UpdateMountUsable()
+    local usable = IsMounted() or CanMount()
+    mountIcon:SetDesaturated(not usable)
+    if usable then
+        mountIcon:SetVertexColor(1, 1, 1)
+    else
+        mountIcon:SetVertexColor(0.4, 0.4, 0.4)
+    end
+end
+
+-- shown while the player is in an Acherus match: the server fakes it as an active battlefield
+local function UpdateMountButton()
+    local inMatch = false
+    if AcherusBG_MountMethod == MOUNT_METHOD_FRAME and AcherusBG_UI.active and not IsRealEyeOfTheStorm() then
+        for i = 1, (MAX_BATTLEFIELD_QUEUES or 2) do
+            if GetBattlefieldStatus(i) == "active" then
+                inMatch = true
+                break
+            end
+        end
+    end
+
+    if inMatch then
+        UpdateMountUsable()
+        mountButton:Show()
+    else
+        mountButton:Hide()
+    end
+end
+
+local mountWatcher = CreateFrame("Frame")
+mountWatcher:RegisterEvent("UPDATE_BATTLEFIELD_STATUS")
+mountWatcher:RegisterEvent("PLAYER_ENTERING_WORLD")
+mountWatcher:SetScript("OnEvent", UpdateMountButton)
+
+local mountUsableWatcher = CreateFrame("Frame")
+mountUsableWatcher:RegisterEvent("PLAYER_REGEN_DISABLED")
+mountUsableWatcher:RegisterEvent("PLAYER_REGEN_ENABLED")
+mountUsableWatcher:RegisterEvent("PLAYER_DEAD")
+mountUsableWatcher:RegisterEvent("PLAYER_ALIVE")
+mountUsableWatcher:RegisterEvent("PLAYER_UNGHOST")
+mountUsableWatcher:RegisterEvent("UPDATE_SHAPESHIFT_FORM")
+mountUsableWatcher:RegisterEvent("UNIT_AURA")
+mountUsableWatcher:SetScript("OnEvent", function(self, event, unit)
+    if event == "UNIT_AURA" and unit ~= "player" then
+        return
+    end
+    if mountButton:IsShown() then
+        UpdateMountUsable()
+    end
+end)
+
+-- the server flips AcherusBG_UI.active and calls Relabel() right after
+local RelabelBeforeMount = AcherusBG_UI.Relabel
+if RelabelBeforeMount then
+    AcherusBG_UI.Relabel = function()
+        local result = RelabelBeforeMount()
+        UpdateMountButton()
+        return result
+    end
+end
+
+-- this part may arrive with the match already running, after the events above
+UpdateMountButton()
+
 -- ---------------------------------------------------------------------------- instruction book
 -- The book of each starting area is a page text gameobject, shown by ItemTextFrame. Its page is a SimpleHTML that
 -- has no font for H1, so the title looks like any paragraph, and it cannot draw icons. While our book is open the

@@ -197,6 +197,12 @@ public:
             isSanctuary = false;
     }
 
+    void OnCheckOutdoors(Player* player, bool& isOutdoors) override
+    {
+        if (!isOutdoors && sAcherusOrbs->IsOutdoorsForced(player))
+            isOutdoors = true;
+    }
+
     void OnRepopAtGraveyard(Player* player, bool& handled) override
     {
         if (!handled)

@@ -89,6 +89,7 @@ namespace AcherusOrbs
         static constexpr uint32 SpiritHealMana = 44535;              // Spirit Heal, on the player after the resurrection
         static constexpr uint32 PreparationDome = 50461;             // Anti-Magic Zone: only its channel kit is used, the aura is never applied
         static constexpr uint32 StairsPortal = 42049;                // Boss Frost Portal State (dummy), on the trigger at the top of the stairs
+        static constexpr uint32 AcherusDeathcharger = 48778;         // death knight mount: mount aura (creature 28302) and +100% mounted speed, cast by the mount button
 
         // forge auras, on the forge triggers while the rune is ready; visual only (dummy, except 58361, see README)
         static constexpr uint32 ForgeSpiritsFrost = 31954;           // Spirit Particles, super big (DND): Spells\Ghost_state.mdx
@@ -357,6 +358,17 @@ namespace AcherusOrbs
         Left                                                        // player left the map by himself
     };
 
+    // AcherusOrbs.MountMethod: how players mount in the hall. The client refuses mount spells indoors on its own, so
+    // every method needs the server to mount the player; the id is also sent to the client UI script
+    // (AcherusBG_MountMethod), which runs the client side of the active method. Ideas for new methods: cast the mount the
+    // player tried to use when the client refused it (client hooks + addon message), a mount item in the bags.
+    enum class MountMethod : uint8
+    {
+        None  = 0,                                                  // the hall stays indoors, mounts only outside it
+        Frame = 1,                                                  // client mount button, the server casts the Acherus Deathcharger
+        Max
+    };
+
     struct Match
     {
         uint32 Id = 0;
@@ -420,6 +432,8 @@ namespace AcherusOrbs
         void OnPvPKill(Player* killer, Player* killed);
         void OnUpdateZone(Player* player) const;
         bool IsSanctuaryDisabled(Player const* player) const;
+        bool IsOutdoorsForced(Player const* player) const;
+        void OnMountRequest(Player* player);
         bool OnRepop(Player* player);
         bool OnSpiritHealerQuery(Player* player, Creature* spiritHealer);
         void OnSpiritHealerQueue(Player* player, Creature* spiritHealer, bool& handled);
@@ -557,6 +571,7 @@ namespace AcherusOrbs
         uint32 _playersPerTeam = 10;
         uint32 _minPlayersPerTeam = 10;
         uint32 _killBonus = 10;
+        MountMethod _mountMethod = MountMethod::None;
 
         // client-side UI relabel (Warden bootstrap + addon messages), see README
         bool _clientUiEnabled = false;
