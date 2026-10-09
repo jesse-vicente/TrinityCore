@@ -734,6 +734,9 @@ class TC_GAME_API PlayerScript : public ScriptObject
         // Called when the sanctuary state of the player's area is checked, set isSanctuary to override it
         virtual void OnCheckSanctuary(Player* player, bool& isSanctuary);
 
+        // Called when the outdoors-only and indoors-only spell requirements are checked, set isOutdoors to override it
+        virtual void OnCheckOutdoors(Player* player, bool& isOutdoors);
+
         // Called before a player is sent to a graveyard, set handled to skip the default graveyard teleport
         virtual void OnRepopAtGraveyard(Player* player, bool& handled);
 
@@ -1080,6 +1083,7 @@ class TC_GAME_API ScriptMgr
         void OnPlayerLeaveBattlefield(Player* player);
         void OnPlayerJoinBattlegroundQueue(Player* player);
         bool OnPlayerCheckSanctuary(Player* player, bool isSanctuary);
+        bool OnPlayerCheckOutdoors(Player* player, bool isOutdoors);
         bool OnPlayerRepopAtGraveyard(Player* player);
         bool OnPlayerSpiritHealerQuery(Player* player, Creature* spiritHealer);
         bool OnPlayerSpiritHealerQueue(Player* player, Creature* spiritHealer);

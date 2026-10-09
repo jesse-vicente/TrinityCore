@@ -1997,6 +1997,12 @@ bool ScriptMgr::OnPlayerCheckSanctuary(Player* player, bool isSanctuary)
     return isSanctuary;
 }
 
+bool ScriptMgr::OnPlayerCheckOutdoors(Player* player, bool isOutdoors)
+{
+    FOREACH_SCRIPT(PlayerScript)->OnCheckOutdoors(player, isOutdoors);
+    return isOutdoors;
+}
+
 bool ScriptMgr::OnPlayerRepopAtGraveyard(Player* player)
 {
     bool handled = false;
@@ -2791,6 +2797,10 @@ void PlayerScript::OnLeaveBattlefield(Player* /*player*/)
 }
 
 void PlayerScript::OnCheckSanctuary(Player* /*player*/, bool& /*isSanctuary*/)
+{
+}
+
+void PlayerScript::OnCheckOutdoors(Player* /*player*/, bool& /*isOutdoors*/)
 {
 }
 

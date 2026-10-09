@@ -5204,11 +5204,11 @@ SpellCastResult Spell::CheckCast(bool strict, uint32* param1 /*= nullptr*/, uint
     if (m_caster->GetTypeId() == TYPEID_PLAYER && VMAP::VMapFactory::createOrGetVMapManager()->isLineOfSightCalcEnabled())
     {
         if (m_spellInfo->HasAttribute(SPELL_ATTR0_OUTDOORS_ONLY) &&
-            !m_caster->IsOutdoors())
+            !sScriptMgr->OnPlayerCheckOutdoors(m_caster->ToPlayer(), m_caster->IsOutdoors()))
             return SPELL_FAILED_ONLY_OUTDOORS;
 
         if (m_spellInfo->HasAttribute(SPELL_ATTR0_INDOORS_ONLY) &&
-            m_caster->IsOutdoors())
+            sScriptMgr->OnPlayerCheckOutdoors(m_caster->ToPlayer(), m_caster->IsOutdoors()))
             return SPELL_FAILED_ONLY_INDOORS;
     }
 
