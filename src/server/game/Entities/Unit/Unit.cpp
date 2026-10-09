@@ -501,7 +501,8 @@ void Unit::Update(uint32 p_time)
     // All position info based actions have been executed, reset info
     _positionUpdateInfo.Reset();
 
-    if (HasScheduledAIChange() && (GetTypeId() != TYPEID_PLAYER || (IsCharmed() && GetCharmerGUID().IsCreature())))
+    // players possessed by players (or used as their vehicle) are client controlled and get no AI
+    if (HasScheduledAIChange() && (GetTypeId() != TYPEID_PLAYER || (IsCharmed() && (GetCharmerGUID().IsCreature() || !HasUnitFlag(UNIT_FLAG_POSSESSED)))))
         UpdateCharmAI();
     RefreshAI();
 }
@@ -9663,18 +9664,11 @@ void Unit::UpdateCharmAI()
         UnitAI* newAI = nullptr;
         if (GetTypeId() == TYPEID_PLAYER)
         {
-            if (Unit* charmer = GetCharmer())
-            {
-                // first, we check if the creature's own AI specifies an override playerai for its owned players
-                if (Creature* creatureCharmer = charmer->ToCreature())
-                {
-                    if (CreatureAI* charmerAI = creatureCharmer->AI())
-                        newAI = charmerAI->GetAIForCharmedPlayer(ToPlayer());
-                }
-                else
-                    TC_LOG_ERROR("entities.unit.ai", "Attempt to assign charm AI to player {} who is charmed by non-creature {}.", GetGUID().ToString(), GetCharmerGUID().ToString());
-            }
-            if (!newAI) // otherwise, we default to the generic one
+            // first, we check if the creature's own AI specifies an override playerai for its owned players
+            if (Creature* creatureCharmer = Object::ToCreature(GetCharmer()))
+                if (CreatureAI* charmerAI = creatureCharmer->AI())
+                    newAI = charmerAI->GetAIForCharmedPlayer(ToPlayer());
+            if (!newAI) // otherwise (or when charmed by a player), we default to the generic one
                 newAI = new SimpleCharmedPlayerAI(ToPlayer());
         }
         else
@@ -9719,7 +9713,7 @@ void Unit::DeleteCharmInfo()
 }
 
 CharmInfo::CharmInfo(Unit* unit)
-: _unit(unit), _CommandState(COMMAND_FOLLOW), _petnumber(0), _oldReactState(REACT_PASSIVE),
+: _unit(unit), _CommandState(COMMAND_FOLLOW), _petnumber(0), _oldReactState(REACT_PASSIVE), _playerReactState(REACT_DEFENSIVE),
   _isCommandAttack(false), _isCommandFollow(false), _isAtStay(false), _isFollowing(false), _isReturning(false),
   _stayX(0.0f), _stayY(0.0f), _stayZ(0.0f)
 {
@@ -9804,9 +9798,9 @@ void CharmInfo::InitPossessCreateSpells()
 
 void CharmInfo::InitCharmCreateSpells()
 {
-    if (_unit->GetTypeId() == TYPEID_PLAYER)                // charmed players don't have spells
+    if (_unit->GetTypeId() == TYPEID_PLAYER)                // charmed players don't have spells, only commands and reactions
     {
-        InitEmptyActionBar();
+        InitPetActionBar();
         return;
     }
 
@@ -11620,7 +11614,8 @@ bool Unit::SetCharmedBy(Unit* charmer, CharmType type, AuraApplication const* au
     if (Creature* creature = ToCreature())
         creature->RefreshCanSwimFlag();
 
-    if ((GetTypeId() != TYPEID_PLAYER) || (charmer->GetTypeId() != TYPEID_PLAYER))
+    // players possessed by players are client controlled, plain charms are driven by SimpleCharmedPlayerAI
+    if ((GetTypeId() != TYPEID_PLAYER) || (charmer->GetTypeId() != TYPEID_PLAYER) || (type != CHARM_TYPE_POSSESS && type != CHARM_TYPE_VEHICLE))
     {
         // AI will schedule its own change if appropriate
         if (UnitAI* ai = GetAI())
@@ -11732,7 +11727,7 @@ void Unit::RemoveCharmedBy(Unit* charmer)
     // reset confused movement for example
     ApplyControlStatesIfNeeded();
 
-    if (GetTypeId() != TYPEID_PLAYER || charmer->GetTypeId() == TYPEID_UNIT)
+    if (GetTypeId() != TYPEID_PLAYER || charmer->GetTypeId() == TYPEID_UNIT || type == CHARM_TYPE_CHARM)
     {
         if (UnitAI* charmedAI = GetAI())
             charmedAI->OnCharmed(false); // AI will potentially schedule a charm ai update

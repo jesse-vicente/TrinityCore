@@ -105,6 +105,9 @@ class TC_GAME_API SimpleCharmedPlayerAI : public PlayerAI
 
     private:
         TargetedSpell SelectAppropriateCastForSpec();
+        void UpdateCharmedByPlayer(Unit* charmer, uint32 diff);
+        Unit* SelectDefensiveTarget(Unit const* charmer, bool attackersOnly) const;
+        void UpdateCombat(Unit* target, uint32 diff);
         uint32 _castCheckTimer;
         bool _chaseCloser;
         bool _forceFacing;

@@ -1154,6 +1154,13 @@ PlayerAI::TargetedSpell SimpleCharmedPlayerAI::SelectAppropriateCastForSpec()
 static const float CASTER_CHASE_DISTANCE = 28.0f;
 void SimpleCharmedPlayerAI::UpdateAI(uint32 diff)
 {
+    if (me->GetCharmerGUID().IsPlayer())
+    {
+        if (Unit* playerCharmer = me->GetCharmer())
+            UpdateCharmedByPlayer(playerCharmer, diff);
+        return;
+    }
+
     Creature* charmer = GetCharmer();
     if (!charmer)
         return;
@@ -1207,43 +1214,7 @@ void SimpleCharmedPlayerAI::UpdateAI(uint32 diff)
             _forceFacing = true;
         }
 
-        if (me->IsStopped() && !me->HasUnitState(UNIT_STATE_CANNOT_TURN))
-        {
-            float targetAngle = me->GetAbsoluteAngle(target);
-            if (_forceFacing || fabs(me->GetOrientation() - targetAngle) > 0.4f)
-            {
-                me->SetFacingTo(targetAngle);
-                _forceFacing = false;
-            }
-        }
-
-        if (_castCheckTimer <= diff)
-        {
-            if (me->HasUnitState(UNIT_STATE_CASTING))
-                _castCheckTimer = 0;
-            else
-            {
-                if (IsRangedAttacker()) // chase to zero if the target isn't in line of sight
-                {
-                    bool inLOS = me->IsWithinLOSInMap(target);
-                    if (_chaseCloser != !inLOS)
-                    {
-                        _chaseCloser = !inLOS;
-                        if (_chaseCloser)
-                            AttackStart(target);
-                        else
-                            AttackStartCaster(target, CASTER_CHASE_DISTANCE);
-                    }
-                }
-                if (TargetedSpell shouldCast = SelectAppropriateCastForSpec())
-                    DoCastAtTarget(shouldCast);
-                _castCheckTimer = 500;
-            }
-        }
-        else
-            _castCheckTimer -= diff;
-
-        DoAutoAttackIfReady();
+        UpdateCombat(target, diff);
     }
     else if (!_isFollowing)
     {
@@ -1256,6 +1227,134 @@ void SimpleCharmedPlayerAI::UpdateAI(uint32 diff)
 
         me->GetMotionMaster()->MoveFollow(charmer, PET_FOLLOW_DIST, PET_FOLLOW_ANGLE);
     }
+}
+
+// Charmed by a player (e.g. Gnomish Mind Control Cap): the charmer only gets the attack/follow/stay and reaction
+// buttons on the pet bar, the AI picks the spells on its own
+void SimpleCharmedPlayerAI::UpdateCharmedByPlayer(Unit* charmer, uint32 diff)
+{
+    CharmInfo* charmInfo = me->GetCharmInfo();
+    if (!charmInfo)
+        return;
+
+    Unit* target = me->GetVictim();
+    if (!target || !CanAIAttack(target))
+    {
+        target = nullptr;
+        if (charmInfo->GetPlayerReactState() != REACT_PASSIVE)
+            target = SelectDefensiveTarget(charmer, charmInfo->IsCommandFollow());
+
+        if (!target)
+        {
+            me->AttackStop(); // drop an attack command target we may not attack
+
+            if (!_isFollowing)
+            {
+                _isFollowing = true;
+                me->CastStop();
+
+                if (me->HasUnitState(UNIT_STATE_CHASE))
+                    me->GetMotionMaster()->Remove(CHASE_MOTION_TYPE);
+
+                if (charmInfo->HasCommandState(COMMAND_STAY))
+                {
+                    float x, y, z;
+                    charmInfo->GetStayPosition(x, y, z);
+                    me->GetMotionMaster()->MovePoint(0, x, y, z);
+                    charmInfo->SetIsAtStay(true);
+                }
+                else
+                    me->GetMotionMaster()->MoveFollow(charmer, PET_FOLLOW_DIST, PET_FOLLOW_ANGLE);
+            }
+            return;
+        }
+    }
+
+    // the attack command only sets the victim, chase it from here (units left at stay fight from where they are)
+    if (_isFollowing || target != me->GetVictim() || (!charmInfo->IsAtStay() && !me->HasUnitState(UNIT_STATE_CHASE)))
+    {
+        _isFollowing = false;
+        _forceFacing = true;
+
+        bool const chase = !charmInfo->IsAtStay();
+        if (IsRangedAttacker())
+        {
+            _chaseCloser = !me->IsWithinLOSInMap(target);
+            me->Attack(target, _chaseCloser);
+            if (chase)
+            {
+                if (_chaseCloser)
+                    me->GetMotionMaster()->MoveChase(target);
+                else
+                    me->GetMotionMaster()->MoveChase(target, CASTER_CHASE_DISTANCE);
+            }
+        }
+        else
+        {
+            me->Attack(target, true);
+            if (chase)
+                me->GetMotionMaster()->MoveChase(target);
+        }
+    }
+
+    UpdateCombat(target, diff);
+}
+
+// Without an attack command, defend the charmer: help with its victim, then fight whoever attacks it or us
+Unit* SimpleCharmedPlayerAI::SelectDefensiveTarget(Unit const* charmer, bool attackersOnly) const
+{
+    if (!attackersOnly)
+        if (Unit* victim = charmer->GetVictim())
+            if (CanAIAttack(victim))
+                return victim;
+
+    for (Unit const* defended : { charmer, static_cast<Unit const*>(me) })
+        for (Unit* attacker : defended->getAttackers())
+            if (CanAIAttack(attacker))
+                return attacker;
+
+    return nullptr;
+}
+
+void SimpleCharmedPlayerAI::UpdateCombat(Unit* target, uint32 diff)
+{
+    if (me->IsStopped() && !me->HasUnitState(UNIT_STATE_CANNOT_TURN))
+    {
+        float targetAngle = me->GetAbsoluteAngle(target);
+        if (_forceFacing || fabs(me->GetOrientation() - targetAngle) > 0.4f)
+        {
+            me->SetFacingTo(targetAngle);
+            _forceFacing = false;
+        }
+    }
+
+    if (_castCheckTimer <= diff)
+    {
+        if (me->HasUnitState(UNIT_STATE_CASTING))
+            _castCheckTimer = 0;
+        else
+        {
+            if (IsRangedAttacker()) // chase to zero if the target isn't in line of sight
+            {
+                bool inLOS = me->IsWithinLOSInMap(target);
+                if (_chaseCloser != !inLOS)
+                {
+                    _chaseCloser = !inLOS;
+                    if (_chaseCloser)
+                        AttackStart(target);
+                    else
+                        AttackStartCaster(target, CASTER_CHASE_DISTANCE);
+                }
+            }
+            if (TargetedSpell shouldCast = SelectAppropriateCastForSpec())
+                DoCastAtTarget(shouldCast);
+            _castCheckTimer = 500;
+        }
+    }
+    else
+        _castCheckTimer -= diff;
+
+    DoAutoAttackIfReady();
 }
 
 void SimpleCharmedPlayerAI::OnCharmed(bool isNew)

@@ -696,6 +696,10 @@ struct TC_GAME_API CharmInfo
         CommandStates GetCommandState() const { return _CommandState; }
         bool HasCommandState(CommandStates state) const { return (_CommandState == state); }
 
+        // players have no react state of their own, keep the one set from the pet bar here
+        void SetPlayerReactState(ReactStates st) { _playerReactState = st; }
+        ReactStates GetPlayerReactState() const { return _playerReactState; }
+
         void InitPossessCreateSpells();
         void InitCharmCreateSpells();
         void InitPetActionBar();
@@ -740,6 +744,8 @@ struct TC_GAME_API CharmInfo
 
         //for restoration after charmed
         ReactStates     _oldReactState;
+
+        ReactStates     _playerReactState;
 
         bool _isCommandAttack;
         bool _isCommandFollow;

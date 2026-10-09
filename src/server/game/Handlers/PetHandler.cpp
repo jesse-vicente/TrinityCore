@@ -93,9 +93,17 @@ void WorldSession::HandlePetAction(WorldPacket& recvData)
             return;
     }
 
-    /// @todo allow control charmed player?
-    if (pet->GetTypeId() == TYPEID_PLAYER && !(flag == ACT_COMMAND && spellid == COMMAND_ATTACK))
-        return;
+    // charmed players have no spells: possessed ones only take the attack command, charmed ones also follow/stay and reactions
+    if (pet->GetTypeId() == TYPEID_PLAYER)
+    {
+        if (pet->HasUnitFlag(UNIT_FLAG_POSSESSED))
+        {
+            if (!(flag == ACT_COMMAND && spellid == COMMAND_ATTACK))
+                return;
+        }
+        else if (flag != ACT_COMMAND && flag != ACT_REACTION)
+            return;
+    }
 
     if (GetPlayer()->m_Controlled.size() == 1)
         HandlePetActionHelper(pet, guid1, spellid, flag, guid2);
@@ -263,6 +271,8 @@ void WorldSession::HandlePetActionHelper(Unit* pet, ObjectGuid guid1, uint32 spe
                 case REACT_AGGRESSIVE: // activete
                     if (pet->GetTypeId() == TYPEID_UNIT)
                         pet->ToCreature()->SetReactState(ReactStates(spellid));
+                    else
+                        charmInfo->SetPlayerReactState(ReactStates(spellid));
                     break;
             }
             break;
