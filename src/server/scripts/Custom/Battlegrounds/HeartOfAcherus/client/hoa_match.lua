@@ -1,9 +1,7 @@
--- Heart of Acherus: match-only client-side UI (part 2).
+-- Heart of Acherus: client UI part 2 (match), see docs/client-ui.md.
 --
--- Sent by the worldserver when the player enters the Heart of Acherus queue, and re-sent after a /reload if
--- the player is still queued or in a match. It extends the shared helpers exposed by acherus_orbs_login.lua
--- (part 1), which must be applied first. Runs in the client global environment via loadstring; the
--- AcherusBG_Part2 guard keeps it idempotent (the match section is sent again whenever it is missing).
+-- Sent to queued and in-match players, after part 1 (hoa_login.lua), whose AcherusBG_UI helpers it
+-- extends. The AcherusBG_Part2 guard keeps it idempotent.
 
 if not AcherusBG_UI then return end
 if AcherusBG_Part2 then return end
@@ -12,27 +10,25 @@ AcherusBG_Part2 = true
 local IsRealEyeOfTheStorm = AcherusBG_UI.IsRealEyeOfTheStorm
 
 -- ---------------------------------------------------------------------------- rune carrier auras
--- The server applies a visible "Portal State" dummy aura to each rune carrier (33338 red/Blood, 33339
--- green/Unholy, 33340 blue/Frost). All three share the same DBC icon, so they are told apart by the
--- (localized) spell name queried once from the client, then relabeled with death knight icons. This keeps
--- a death knight from ending up with two identical presence icons in the aura bar.
+-- Each carrier wears a visible dummy "Portal State" (33338 Blood, 33339 Unholy, 33340 Frost), relabeled here with
+-- death knight icons. The three share one DBC icon, so they are told apart by the localized spell name.
 
-local ORB_ICON_BLOOD = "Interface\\Icons\\Spell_Deathknight_BladedArmor"
-local ORB_ICON_UNHOLY = "Interface\\Icons\\Spell_Deathknight_EmpowerRuneblade"
-local ORB_ICON_FROST = "Interface\\Icons\\Spell_Deathknight_EmpowerRuneblade2"
-local ORB_DESC = "Carrying a rune from the runeforges of Acherus."
+local RUNE_ICON_BLOOD = "Interface\\Icons\\Spell_Deathknight_BladedArmor"
+local RUNE_ICON_UNHOLY = "Interface\\Icons\\Spell_Deathknight_EmpowerRuneblade"
+local RUNE_ICON_FROST = "Interface\\Icons\\Spell_Deathknight_EmpowerRuneblade2"
+local RUNE_DESC = "Carrying a rune from the runeforges of Acherus."
 
-local ORB_AURAS = {}
+local RUNE_AURAS = {}
 do
     local defs = {
-        { 33338, "Blood Rune", ORB_ICON_BLOOD },
-        { 33339, "Unholy Rune", ORB_ICON_UNHOLY },
-        { 33340, "Frost Rune", ORB_ICON_FROST },
+        { 33338, "Blood Rune", RUNE_ICON_BLOOD },
+        { 33339, "Unholy Rune", RUNE_ICON_UNHOLY },
+        { 33340, "Frost Rune", RUNE_ICON_FROST },
     }
     for _, def in ipairs(defs) do
         local spellName = GetSpellInfo(def[1])
         if spellName then
-            ORB_AURAS[spellName] = {
+            RUNE_AURAS[spellName] = {
                 name = def[2],
                 icon = def[3],
                 pattern = string.gsub(spellName, "%W", "%%%0"),
@@ -41,12 +37,10 @@ do
     end
 end
 
--- the rune aura is always a helpful buff, so the buff list works for every frame (a filter-less UnitAura
--- would not necessarily match the index the frame used). The count is the stack amount the server keeps on
--- the portal aura (its charges, since the portal is not stackable in the DBC).
-local function OrbAuraFor(unit, index)
+-- always a helpful buff, so the buff index matches every frame; count = the stacks the server mirrors as charges
+local function RuneAuraFor(unit, index)
     local name, _, _, count = UnitBuff(unit, index)
-    return name and ORB_AURAS[name], count or 0
+    return name and RUNE_AURAS[name], count or 0
 end
 
 -- player buff frame; "buttonName" is the button name prefix, "BuffButton" for buffs
@@ -54,7 +48,7 @@ hooksecurefunc("AuraButton_Update", function(buttonName, index)
     if not AcherusBG_UI.active or buttonName ~= "BuffButton" then
         return
     end
-    local def = OrbAuraFor("player", index)
+    local def = RuneAuraFor("player", index)
     if def then
         local icon = _G[buttonName .. index .. "Icon"]
         if icon then
@@ -71,7 +65,7 @@ hooksecurefunc("TargetFrame_UpdateAuras", function(self)
     local frameName = self:GetName()
     local maxBuffs = MAX_TARGET_BUFFS or 32
     for i = 1, maxBuffs do
-        local def = OrbAuraFor(self.unit, i)
+        local def = RuneAuraFor(self.unit, i)
         if def then
             local icon = _G[frameName .. "Buff" .. i .. "Icon"]
             if icon then
@@ -89,7 +83,7 @@ hooksecurefunc("RefreshAuras", function(frame, unit)
     local frameName = frame:GetName()
     local maxAuras = MAX_RAID_AURAS or 4
     for i = 1, maxAuras do
-        local def = OrbAuraFor(unit, i)
+        local def = RuneAuraFor(unit, i)
         if def then
             local icon = _G[frameName .. "Aura" .. i .. "Icon"]
             if icon then
@@ -109,7 +103,7 @@ hooksecurefunc("PartyMemberBuffTooltip_Update", function(self)
     for i = 1, maxBuffs do
         local name = UnitBuff(self.unit, i)
         if name then
-            local def = ORB_AURAS[name]
+            local def = RUNE_AURAS[name]
             if def then
                 local icon = _G["PartyMemberBuffTooltipBuff" .. index .. "Icon"]
                 if icon then
@@ -121,14 +115,13 @@ hooksecurefunc("PartyMemberBuffTooltip_Update", function(self)
     end
 end)
 
--- Aura tooltips: the player buffs use SetUnitAura, the other frames use SetUnitBuff. The aura description
--- has no Lua API, so it is appended here; Show() afterwards recomputes the tooltip height. The current totals
--- are derived from the stack count the server mirrors on the aura (see OrbAuraFor).
-local function OrbTooltip(self, unit, index)
+-- aura tooltips (SetUnitAura for the player buffs, SetUnitBuff elsewhere): the description has no Lua API, so it
+-- is appended with the totals of the current stacks; Show() recomputes the height
+local function RuneTooltip(self, unit, index)
     if not AcherusBG_UI.active then
         return
     end
-    local def, count = OrbAuraFor(unit, index)
+    local def, count = RuneAuraFor(unit, index)
     if not def then
         return
     end
@@ -138,7 +131,7 @@ local function OrbTooltip(self, unit, index)
     end
 
     local stacks = (count and count > 0) and count or 1
-    self:AddLine(ORB_DESC, 1, 1, 1)
+    self:AddLine(RUNE_DESC, 1, 1, 1)
     self:AddLine(string.format("Damage done: +%d%%", math.min(100, 20 * stacks)), 1, 1, 1)
     self:AddLine(string.format("Damage taken: +%d%%", math.min(100, 20 * stacks)), 1, 1, 1)
     self:AddLine(string.format("Healing received: -%d%%", math.min(50, 10 * stacks)), 1, 1, 1)
@@ -147,31 +140,29 @@ local function OrbTooltip(self, unit, index)
     self:Show()
 end
 
-hooksecurefunc(GameTooltip, "SetUnitAura", OrbTooltip)
-hooksecurefunc(GameTooltip, "SetUnitBuff", OrbTooltip)
+hooksecurefunc(GameTooltip, "SetUnitAura", RuneTooltip)
+hooksecurefunc(GameTooltip, "SetUnitBuff", RuneTooltip)
 
--- floating combat text: the aura name is already baked into the message string, so rewrite it in the funnel
+-- floating combat text: the aura name is baked into the message, so rewrite it in the funnel
 if CombatText_AddMessage then
-    local OrbCombatText = CombatText_AddMessage
+    local BaseCombatText = CombatText_AddMessage
     CombatText_AddMessage = function(message, ...)
         if AcherusBG_UI.active and type(message) == "string" then
-            for _, def in pairs(ORB_AURAS) do
+            for _, def in pairs(RUNE_AURAS) do
                 if string.find(message, def.pattern) then
                     message = string.gsub(message, def.pattern, def.name)
                 end
             end
         end
-        return OrbCombatText(message, ...)
+        return BaseCombatText(message, ...)
     end
 end
 
--- On the inactive -> active transition, force the already drawn frames to re-render once. After a /reload
--- the buff bar is built with the portal icon before the payload arrives, and our per-frame hooks only run
--- on the next aura update (which never comes for a permanent aura). Re-triggering the native updates runs
--- the hooks immediately, so the rune appears without waiting.
-local orbsWereActive = false
+-- inactive -> active: re-render the aura frames once. After a /reload they were drawn with the portal icon, and a
+-- permanent aura never triggers the next update our hooks wait for
+local runesWereActive = false
 
-local function RefreshOrbAuras()
+local function RefreshRuneAuras()
     if BuffFrame_Update then
         pcall(BuffFrame_Update)
     end
@@ -190,14 +181,13 @@ end
 
 local function OnActiveChanged()
     local active = AcherusBG_UI.active and not IsRealEyeOfTheStorm()
-    if active and not orbsWereActive then
-        RefreshOrbAuras()
+    if active and not runesWereActive then
+        RefreshRuneAuras()
     end
-    orbsWereActive = active
+    runesWereActive = active
 end
 
--- The server flips AcherusBG_UI.active and calls Relabel() right after (re)applying the payload, so wrap
--- the entry point defined above to catch that transition.
+-- the server flips AcherusBG_UI.active and calls Relabel(): wrap it to catch the transition
 local RelabelBase = AcherusBG_UI.Relabel
 if RelabelBase then
     AcherusBG_UI.Relabel = function()
@@ -213,12 +203,10 @@ if RelabelBase then
 end
 
 -- ---------------------------------------------------------------------------- minimap rune markers
--- The server pushes AcherusBG_Orbs.Update(px, py, x, y, name, ...) every 0.25 s through the same addon
--- message channel. Positions are world coordinates (yards). The Ebon Hold world map is rotated 90 degrees
--- and mirrored on the minimap (its X comes from the world Y, its Y from the world X), so a world offset
--- (dx, dy) maps to the minimap as (-dy, dx), scaled by the minimap's own world span.
+-- The server calls AcherusBG_Runes.Update(px, py, x, y, name, ...) every 0.25 s with world coordinates (yards).
+-- On the minimap the Ebon Hold is rotated 90 degrees and mirrored: a world offset (dx, dy) is (-dy, dx) there.
 
-local ORB_PRESENCE_ICON = {
+local RUNE_PRESENCE_ICON = {
     "Interface\\Icons\\Spell_Deathknight_FrostPresence",
     "Interface\\Icons\\Spell_Deathknight_BloodPresence",
     "Interface\\Icons\\Spell_Deathknight_UnholyPresence",
@@ -233,7 +221,7 @@ local MINIMAP_WORLD_SPAN = { [0] = 250, [1] = 200, [2] = 150, [3] = 100, [4] = 6
 local MAP_A, MAP_B = -4050, -3159
 local MAP_C, MAP_D = 3087, -2108
 
-AcherusBG_Orbs = { data = nil, icons = {} }
+AcherusBG_Runes = { data = nil, icons = {} }
 
 local function CreateMarker(texture)
     local frame = CreateFrame("Frame", nil, Minimap)
@@ -254,12 +242,12 @@ local function CreateMarker(texture)
 end
 
 for i = 1, 3 do
-    AcherusBG_Orbs.icons[i] = CreateMarker(ORB_PRESENCE_ICON[i])
+    AcherusBG_Runes.icons[i] = CreateMarker(RUNE_PRESENCE_ICON[i])
 end
 
-local function HideOrbMarkers()
+local function HideRuneMarkers()
     for i = 1, 3 do
-        AcherusBG_Orbs.icons[i]:Hide()
+        AcherusBG_Runes.icons[i]:Hide()
     end
 end
 
@@ -287,11 +275,11 @@ local function FindUnitByName(name)
     return nil
 end
 
-local orbDriver = CreateFrame("Frame")
-orbDriver:SetScript("OnUpdate", function()
-    local data = AcherusBG_Orbs.data
+local markerDriver = CreateFrame("Frame")
+markerDriver:SetScript("OnUpdate", function()
+    local data = AcherusBG_Runes.data
     if not data or not AcherusBG_UI.active or (GetTime() - data.time) > 2 then
-        HideOrbMarkers()
+        HideRuneMarkers()
         return
     end
 
@@ -349,40 +337,40 @@ orbDriver:SetScript("OnUpdate", function()
     end
 
     for i = 1, 3 do
-        local orb = data.orbs[i]
-        local icon = AcherusBG_Orbs.icons[i]
-        if orb then
+        local rune = data.runes[i]
+        local icon = AcherusBG_Runes.icons[i]
+        if rune then
             -- a same team carrier follows its battlefield raid unit for a smooth position; the others
             -- (enemy carriers and the forges) use the last server position
-            local orbX, orbY = orb.x, orb.y
-            if orb.unit then
-                local ux, uy = GetPlayerMapPosition(orb.unit)
+            local runeX, runeY = rune.x, rune.y
+            if rune.unit then
+                local ux, uy = GetPlayerMapPosition(rune.unit)
                 if ux and not (ux == 0 and uy == 0) then
-                    orbY = MAP_A + MAP_B * ux
-                    orbX = MAP_C + MAP_D * uy
+                    runeY = MAP_A + MAP_B * ux
+                    runeX = MAP_C + MAP_D * uy
                 end
             end
 
-            Place(icon, orbX, orbY)
+            Place(icon, runeX, runeY)
         else
             icon:Hide()
         end
     end
 end)
-orbDriver:Show()
+markerDriver:Show()
 
 -- Called by the server every 0.25 s with the player position (the anchor) and each rune's position, plus
 -- (for a carrier of the observer's team) its name so the client can follow that unit smoothly.
-function AcherusBG_Orbs.Update(px, py, fx, fy, fName, bx, by, bName, ux, uy, uName)
+function AcherusBG_Runes.Update(px, py, fx, fy, fName, bx, by, bName, ux, uy, uName)
     local function Store(x, y, name)
         return { x = x, y = y, unit = FindUnitByName(name) }
     end
 
-    AcherusBG_Orbs.data = {
+    AcherusBG_Runes.data = {
         time = GetTime(),
         px = px,
         py = py,
-        orbs = {
+        runes = {
             Store(fx, fy, fName),
             Store(bx, by, bName),
             Store(ux, uy, uName),
@@ -391,17 +379,15 @@ function AcherusBG_Orbs.Update(px, py, fx, fy, fName, bx, by, bName, ux, uy, uNa
 end
 
 -- ---------------------------------------------------------------------------- mount methods
--- The client refuses mount spells indoors on its own: in the hall the mount buttons are disabled and nothing reaches
--- the server. The server picks how players mount in the hall (AcherusOrbs.MountMethod) and puts its id in
--- AcherusBG_MountMethod at the top of this payload; each method below only acts while its id is the active one.
+-- The client refuses mount spells indoors by itself, nothing reaches the server. The server puts the active
+-- HeartOfAcherus.MountMethod in AcherusBG_MountMethod at the top of this payload; each method checks its id.
 
 local MOUNT_METHOD_FRAME = 1
 
 -- ---------------------------------------------------------------------------- mount method 1: frame
--- During a match this button asks the server for the Acherus Deathcharger instead; the server casts it
--- (usual cast time, combat and movement rules), or dismounts the player when mounted. Bindable with
--- /click AcherusBGMountButton. Dragging it moves it; the position is kept in a client CVar (Config.wtf), since the
--- script has no SavedVariables and the layout cache does not restore frames created after the login.
+-- In a match this button asks the server to cast the Acherus Deathcharger (or to dismount). Bindable with
+-- /click AcherusBGMountButton. Draggable; the position goes to a client CVar (no SavedVariables here, and the
+-- layout cache skips frames created after the login).
 
 local MOUNT_SPELL = 48778
 local MOUNT_BUTTON_SIZE = 56
@@ -478,7 +464,7 @@ mountButton:SetScript("OnLeave", function()
     GameTooltip:Hide()
 end)
 
--- the rune carrier aura (see ORB_AURAS), death, combat and the forms that forbid mounts (druid forms, Ghost Wolf)
+-- the rune carrier aura (see RUNE_AURAS), death, combat and the forms that forbid mounts (druid forms, Ghost Wolf)
 -- grey the icon out like an unusable action; it stays clickable and the server tells why. Mounted, it dismounts.
 local function CanMount()
     if UnitIsDeadOrGhost("player") or UnitAffectingCombat("player") then
@@ -490,7 +476,7 @@ local function CanMount()
         return false
     end
 
-    for spellName in pairs(ORB_AURAS) do
+    for spellName in pairs(RUNE_AURAS) do
         if UnitBuff("player", spellName) then
             return false
         end
@@ -564,10 +550,9 @@ end
 UpdateMountButton()
 
 -- ---------------------------------------------------------------------------- instruction book
--- The book of each starting area is a page text gameobject, shown by ItemTextFrame. Its page is a SimpleHTML that
--- has no font for H1, so the title looks like any paragraph, and it cannot draw icons. While our book is open the
--- H1 gets a bigger copy of the page font, and a row of death knight runes is drawn under the title of the first
--- page (the page leaves blank lines for it). Any other book gets the page font back for H1.
+-- The starting area book is a page text (ItemTextFrame, SimpleHTML), which has no H1 font and draws no icons.
+-- Our book gets a bigger H1 and a row of rune icons under the first title (the page leaves blank lines for it);
+-- any other book gets the page font back for H1.
 
 -- the gameobject name (O Coracao de Acherus with its accents) in UTF-8 bytes, so this file stays ASCII
 local BOOK_NAME = "O Cora\195\167\195\163o de Acherus"
@@ -684,6 +669,5 @@ if ItemTextPageText then
     end)
 end
 
--- Tell the worldserver the match part was applied (bit 2 set, part 1 was already required to get here). Sent
--- through a whisper to self so it reaches the server without a guild. The body is valid Lua if echoed back.
+-- ack: both parts applied (whisper to self works without a guild; the body is valid Lua if echoed back)
 SendAddonMessage('AcherusBG', 'return 3', 'WHISPER', UnitName('player'))

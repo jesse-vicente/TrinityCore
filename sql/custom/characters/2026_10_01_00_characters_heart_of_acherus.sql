@@ -1,5 +1,5 @@
 -- Heart of Acherus: position to return players to after a crash or logout during a match
-CREATE TABLE IF NOT EXISTS `custom_acherus_orbs_return` (
+CREATE TABLE IF NOT EXISTS `custom_heart_of_acherus_return` (
   `guid` INT UNSIGNED NOT NULL,
   `map` SMALLINT UNSIGNED NOT NULL,
   `position_x` FLOAT NOT NULL,

@@ -16,11 +16,11 @@
  */
 
 // This is where scripts' loading functions should be declared:
-void AddSC_acherus_orbs();
+void AddSC_heart_of_acherus();
 
 // The name of this function should match:
 // void Add${NameOfDirectory}Scripts()
 void AddCustomScripts()
 {
-    AddSC_acherus_orbs();
+    AddSC_heart_of_acherus();
 }

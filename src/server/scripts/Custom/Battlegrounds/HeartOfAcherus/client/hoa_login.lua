@@ -1,19 +1,14 @@
--- Heart of Acherus: client-side UI for every player (part 1).
+-- Heart of Acherus: client UI part 1 (login), see docs/client-ui.md.
 --
--- Pushed by the worldserver through Warden (bootstrap listener) + addon messages on login, see the module
--- README. Runs in the client global environment via loadstring. Keep it idempotent: the AcherusBG_UI guard
--- prevents a second execution from stacking hooks when the payload is delivered again (for example after a
--- /reload or a version update). The match-only UI lives in acherus_orbs_match.lua (part 2), which extends the
--- shared helpers exposed here on the AcherusBG_UI table.
+-- Sent to every player on login. The AcherusBG_UI guard keeps it idempotent, so a resend never stacks hooks.
+-- Part 2 (hoa_match.lua) extends the helpers exposed on AcherusBG_UI.
 
 if AcherusBG_UI then return end
 AcherusBG_UI = { active = false }
 
 local TITLE = "Heart of Acherus"
 
--- The battleground name is localized (BattlemasterList.dbc), so we never hardcode "Eye of the Storm": we ask
--- the client for it through the same API the UI uses. The server fakes the Heart of Acherus match as the Eye of the
--- Storm, so GetBattlefieldStatus returns the very name the minimap, the dropdown and the list display.
+-- the localized name of the faked Eye of the Storm, as the minimap, dropdown and list show it (never hardcoded)
 local function LocalizedAcherusName()
     local fallback
     for i = 1, (MAX_BATTLEFIELD_QUEUES or 2) do
@@ -28,10 +23,8 @@ local function LocalizedAcherusName()
     return fallback
 end
 
--- The server keeps AcherusBG_UI.active on both while queued and in the match. The top bar world states
--- and the scoreboard column, however, only exist inside the match: while merely queued in another zone
--- (Eastern Plaguelands, for example) that zone's own world state UI must not be touched. The fake Eye of
--- the Storm status is "active" only in the match (it is "queued" otherwise).
+-- AcherusBG_UI.active is on while queued too, but the top bar and the score column only belong to the match (the
+-- fake status is "active" there): queued elsewhere, that zone's world state UI is left alone
 local function IsInAcherusMatch()
     local name = LocalizedAcherusName()
     if not name then
@@ -46,9 +39,7 @@ local function IsInAcherusMatch()
     return false
 end
 
--- The server only turns the relabel on while the player is in the Heart of Acherus queue or match (AcherusBG_UI.active).
--- Belt-and-suspenders: never touch the real Eye of the Storm instance, even if a toggle was missed. The name
--- comparison uses the localized name above, so it holds on every client locale.
+-- safety net: never touch the real Eye of the Storm, even if a toggle was missed (works in every locale)
 local function IsRealEyeOfTheStorm()
     local _, instanceType = IsInInstance()
     if instanceType ~= "pvp" then
@@ -58,16 +49,14 @@ local function IsRealEyeOfTheStorm()
     return name ~= nil and GetRealZoneText() == name
 end
 
--- The scoreboard stat column comes from GetBattlefieldStatInfo (localized text, tooltip and the Eye of the
--- Storm flag icon). Swap it for our own column while the relabel is active: the empty icon makes the client
--- draw the plain number (no flag, no "x") and the header uses our label and tooltip.
-local ORB_POINTS_TOOLTIP = "Points earned by holding runes and killing enemies."
+-- our scoreboard column instead of the Eye of the Storm one; the empty icon makes the client draw the plain number
+local POINTS_TOOLTIP = "Points earned by holding runes and killing enemies."
 
 if GetBattlefieldStatInfo then
     local OrigBattlefieldStatInfo = GetBattlefieldStatInfo
     GetBattlefieldStatInfo = function(index)
         if AcherusBG_UI.active and IsInAcherusMatch() and index == 1 then
-            return "Points", "", ORB_POINTS_TOOLTIP
+            return "Points", "", POINTS_TOOLTIP
         end
         return OrigBattlefieldStatInfo(index)
     end
@@ -106,12 +95,8 @@ local function Relabel(frame, from, to)
     end
 end
 
--- Minimap battleground button tooltip: the name comes from BattlemasterList.dbc ("Eye of the Storm").
--- Hooked lazily because the button may not exist when the payload runs; RelabelAll re-checks on events.
--- The XML OnEnter installs the OnUpdate by resolving the global MiniMapBattlefieldFrame_OnUpdate, so
--- hooksecurefunc on that global makes every hover install our wrapper (original + tooltip fix). The
--- OnEnter/OnLeave SetScript churn cannot wipe it. Guard is AcherusBG_Hooked so a client that already ran a
--- previous payload re-hooks.
+-- Minimap battleground button tooltip and dropdown. Hooked lazily (the button may not exist yet), through the
+-- global MiniMapBattlefieldFrame_OnUpdate the XML OnEnter resolves, so the OnEnter/OnLeave churn cannot wipe it.
 local function HookMinimap()
     if not MiniMapBattlefieldFrame or MiniMapBattlefieldFrame.AcherusBG_Hooked then
         return
@@ -152,9 +137,7 @@ local function HookMinimap()
         MiniMapBattlefieldFrame:HookScript("OnEnter", FixTooltip)
     end
 
-    -- Right-click opens the dropdown menu (MiniMapBattlefieldDropDown_Initialize) whose title is the
-    -- battleground name from BattlemasterList.dbc. The menu lives in the shared DropDownList1 frame,
-    -- which RelabelAll does not scan, so relabel it after the native OnClick builds the menu.
+    -- the right-click dropdown title, once the native OnClick built the menu
     if MiniMapBattlefieldFrame.HookScript then
         MiniMapBattlefieldFrame:HookScript("OnClick", function()
             if not AcherusBG_UI.active or IsRealEyeOfTheStorm() then
@@ -170,9 +153,7 @@ local function HookMinimap()
     end
 end
 
--- The top bar row is a localized format ("Bases: N  Victory Points: N/1600" for the Eye of the Storm), so the
--- "Bases" label cannot be matched as text. Rewrite the leading "<label>:" of each always-up row instead,
--- whatever locale, and let the client keep filling the numbers.
+-- the top bar rows are a localized format ("Bases: N  Victory Points: N/1600"): rewrite the leading "<label>:"
 local function FixAlwaysUp()
     for i = 1, (NUM_ALWAYS_UP_UI_FRAMES or 4) do
         local fs = _G["AlwaysUpFrame" .. i .. "Text"]
@@ -190,14 +171,11 @@ local function RelabelAll()
         return
     end
 
-    -- top bar label, locale independent (no text matching), only inside the match; the score column is
-    -- handled by the GetBattlefieldStatInfo wrapper above
     if IsInAcherusMatch() then
         FixAlwaysUp()
     end
 
-    -- battleground frames, minimap tooltip and dropdown title: the name comes from BattlemasterList.dbc, so
-    -- match the localized name the client itself reports (nil outside the queue/match: nothing to relabel)
+    -- nil outside the queue/match: nothing to relabel
     local from = LocalizedAcherusName()
     if from then
         Relabel(BattlefieldFrame, from, TITLE)
@@ -208,8 +186,7 @@ local function RelabelAll()
     HookMinimap()
 end
 
--- the server's active toggle calls this right after flipping AcherusBG_UI.active, so the relabel is applied
--- immediately instead of waiting for the next frame update (world states only tick every 5 seconds)
+-- called by the server right after flipping AcherusBG_UI.active
 AcherusBG_UI.Relabel = RelabelAll
 
 RelabelAll()
@@ -243,12 +220,9 @@ watcher:RegisterEvent("PLAYER_ENTERING_WORLD")
 watcher:SetScript("OnEvent", RelabelAll)
 
 -- ---------------------------------------------------------------------------- PvP battleground list
--- The client's Battlegrounds tab (PVPBattlegroundFrame) lists the battleground types of BattlemasterList.dbc,
--- so a custom mode the client has no type for cannot come from the server. Expose one synthetic entry by
--- wrapping the two APIs that list reads (GetNumBattlegroundTypes/GetBattlegroundInfo): the native update then
--- counts it, draws its row and includes it in the scroll range like any other battleground, so it scrolls
--- with the list. The Eye of the Storm type is the one the server fakes the Heart of Acherus match with, so the queue
--- icon must be moved from that row to ours.
+-- The Battlegrounds tab lists the BattlemasterList.dbc types. A synthetic entry comes from wrapping the APIs the
+-- list reads (GetNumBattlegroundTypes/GetBattlegroundInfo), so the native update draws and scrolls it; the queue
+-- icon moves from the faked Eye of the Storm row to ours.
 
 local ACHERUS_BG_TEXTURE = "Interface\\PVPFrame\\PvpRandomBg" -- the same art the Random Battleground uses
 local ACHERUS_BG_LORE =
@@ -259,9 +233,8 @@ local ACHERUS_BG_LORE =
 local OrigGetNumBattlegroundTypes = GetNumBattlegroundTypes
 local OrigGetBattlegroundInfo = GetBattlegroundInfo
 
--- our synthetic entry is inserted second in the list, right after the Random Battleground (the first one after
--- SortBGList). The list only hands its indices to GetBattlegroundInfo and RequestBattlegroundInstanceInfo
--- (PVPBattlegroundFrame.lua), so both translate them: the real types after ours are shifted by one.
+-- second in the list, after the Random Battleground; GetBattlegroundInfo and RequestBattlegroundInstanceInfo shift
+-- the real types after ours by one
 local ACHERUS_BG_POSITION = 2
 
 local function AcherusBGIndex()
@@ -304,8 +277,7 @@ if OrigRequestBattlegroundInstanceInfo then
     end
 end
 
--- the art is the very texture the Random Battleground entry shows, so its size, position, alpha and layer are
--- exactly those of the other battlegrounds (the native update only swaps the texture file)
+-- the Random Battleground art, so size, position, alpha and layer match the other battlegrounds
 local function ApplyAcherusInfo()
     if PVPBattlegroundFrameBGTex then
         PVPBattlegroundFrameBGTex:SetTexture(ACHERUS_BG_TEXTURE)
@@ -350,9 +322,7 @@ local function RowNameText(row)
     return text
 end
 
--- our synthetic entry is the shown row whose displayed name is our title. BGindex alone is ambiguous: it is the
--- list index, and both the real row at index 2 and our entry use index 2, so it cannot tell whether the list
--- was (re)built with the wrapper in place.
+-- the shown row with our title; BGindex alone is ambiguous when the list was built without the wrapper
 local function IsAcherusRow(row)
     if not row or not row:IsShown() or row.BGindex ~= AcherusBGIndex() then
         return false
@@ -410,8 +380,7 @@ if PVPBattleground_UpdateQueueStatus then
     hooksecurefunc("PVPBattleground_UpdateQueueStatus", AcherusQueueStatus)
 end
 
--- "NEW" badge right after the name of our row. The list recycles its row buttons while scrolling, so on every
--- update the badge is moved to whichever row shows our entry, or hidden when it is scrolled out of view.
+-- "NEW" badge after our name; the rows are recycled while scrolling, so it follows whichever row shows our entry
 local NEW_BADGE_TEXT = "NEW"
 
 -- each row gets its own badge (created once); only the row showing our entry shows it
@@ -472,9 +441,7 @@ for _, buttonName in ipairs({ "PVPBattlegroundFrameJoinButton", "PVPBattleground
     end
 end
 
--- Rebuild the Battlegrounds list so the synthetic entry is drawn. Needed when this part is applied while the
--- tab is already open (the list was built without it) and as a belt-and-suspenders whenever the panel is shown
--- again. pcall keeps the native globals safe.
+-- redraws the list with our entry: the tab may have been open when this part was applied
 local function RefreshBattlegroundList()
     if PVPBattleground_UpdateBattlegrounds then
         pcall(PVPBattleground_UpdateBattlegrounds)
@@ -506,29 +473,24 @@ if PVPBattlegroundFrame and PVPBattlegroundFrame.HookScript then
     end)
 end
 
--- already open when this part is applied: the list was built without the synthetic entry. Rebuild it now with
--- a direct call (the detection by index alone cannot tell, so do not gate this one on AcherusRowShown).
+-- already open: rebuild now, without the AcherusRowShown gate (the index alone cannot tell)
 if PVPBattlegroundFrame and PVPBattlegroundFrame:IsShown() then
     RefreshBattlegroundList()
 end
 
--- Shared helpers the match-only part (acherus_orbs_match.lua) reads from this table.
+-- Shared helpers the match-only part (hoa_match.lua) reads from this table.
 AcherusBG_UI.TITLE = TITLE
 AcherusBG_UI.LocalizedAcherusName = LocalizedAcherusName
 AcherusBG_UI.IsInAcherusMatch = IsInAcherusMatch
 AcherusBG_UI.IsRealEyeOfTheStorm = IsRealEyeOfTheStorm
 AcherusBG_UI.AcherusQueueStatus = AcherusQueueStatus
 
--- Tells the worldserver the client left the world or reloaded the UI (PLAYER_LOGOUT fires for both). The
--- server marks the client as dirty and the next request it makes (the battleground status request on UI load)
--- decides between a /reload resync and a real logout (cancelled by the server logout hook). The body is valid
--- Lua (return -1) so it stays a harmless no-op if the guild-less whisper is ever echoed back.
+-- PLAYER_LOGOUT fires on logout and /reload: the server tells them apart by the next status request
 local logoutWatcher = CreateFrame("Frame")
 logoutWatcher:RegisterEvent("PLAYER_LOGOUT")
 logoutWatcher:SetScript("OnEvent", function()
     SendAddonMessage('AcherusBG', 'return -1', 'WHISPER', UnitName('player'))
 end)
 
--- Tell the worldserver part 1 was applied. Sent through a whisper to self so it reaches the server without a
--- guild (the module intercepts any LANG_ADDON message). The body is valid Lua in case it is echoed back.
+-- ack: part 1 applied (whisper to self works without a guild; the body is valid Lua if echoed back)
 SendAddonMessage('AcherusBG', 'return 1', 'WHISPER', UnitName('player'))
