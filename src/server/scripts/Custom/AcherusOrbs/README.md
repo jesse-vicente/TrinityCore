@@ -61,7 +61,8 @@ da porta; o resto (corredor, área externa, outros andares) = fora.
 | `sql/custom/world/2026_10_01_00_world_acherus_orbs.sql` | NPC 990000, textos de gossip 990000/990001, forjas 990001–990003, buff Berserk 990004, parede invisível da preparação 990005, poça de sangue da forja Blood 990006 |
 | `sql/custom/characters/2026_10_01_00_characters_acherus_orbs.sql` | tabela `custom_acherus_orbs_return` |
 | `sql/custom/world/2026_10_04_00_world_acherus_orbs_spirit_healer.sql` | linhas de `spell_area` (área 4342) que liberam 2584/22012/44535 no Acherus |
-| `client/acherus_orbs_ui.lua` | Lua de UI enviado ao cliente (relabels do EotS + marcadores das runas no minimapa) |
+| `client/acherus_orbs_login.lua` | parte 1 do Lua de UI, enviada no login a todos: entrada sintética na lista de BGs, nome no minimapa e notificador de `PLAYER_LOGOUT` |
+| `client/acherus_orbs_match.lua` | parte 2 do Lua de UI, enviada ao entrar na fila/partida: auras do portador, marcadores das runas no minimapa e livro de instruções |
 
 Os SQLs são aplicados automaticamente pelo updater do worldserver (`updates_include` já aponta para `sql/custom`).
 **Atenção:** `sql/custom/*/.gitignore` ignora `*.sql`, então eles só entram num commit com `git add -f`.
@@ -80,10 +81,10 @@ Todos são `PlayerScript`, sem efeito quando nenhum script os usa.
 | `OnSpiritHealerQueue` | `CMSG_AREA_SPIRIT_HEALER_QUEUE`, fora de BG/Battlefield | entrar na fila de ressurreição do wave, mapeado ao guide (visual 2584) |
 | `OnBeforeLogout` | `WorldSession::LogoutPlayer`, junto do `EventPlayerLoggedOut` das BGs, **antes do save** | soltar a runa antes de o personagem ser salvo |
 | `OnPVPLogDataRequest` | `HandlePVPLogDataOpcode` (`MSG_PVP_LOG_DATA`), fora de BG/Battlefield | responder ao pedido do placar com os dados atuais, deixando-o ao vivo durante a partida |
-| `OnRequestBattlefieldStatus` | fim de `HandleRequestBattlefieldStatusOpcode` (`CMSG_BATTLEFIELD_STATUS`) | manter o botão de BG no minimapa respondendo o pedido de status do cliente |
+| `OnRequestBattlefieldStatus` | fim de `HandleRequestBattlefieldStatusOpcode` (`CMSG_BATTLEFIELD_STATUS`) | manter o botão de BG no minimapa respondendo o pedido de status do cliente e disparar o resync após `/reload` (via `_pendingResync`) |
 | `OnBattlefieldPort` | topo de `HandleBattleFieldPortOpcode` (`CMSG_BATTLEFIELD_PORT`) | tratar o "Leave Queue" da janela PvP, que sai da fila do Acherus |
-| `OnAddonMessage` | `ChatHandler::HandleMessagechatOpcode`, mensagens `LANG_ADDON` | receber o handshake do bootstrap do Warden e responder com o Lua de UI |
-| `OnWardenLuaExecuted` | `WardenWin::HandleCheckResult`, quando o cliente responde a um `SendLua` | saber que o listener foi instalado e enviar o payload na hora |
+| `OnAddonMessage` | `ChatHandler::HandleMessagechatOpcode`, mensagens `LANG_ADDON` | receber os acks das partes, o probe e o aviso de `PLAYER_LOGOUT` do cliente |
+| `OnWardenLuaExecuted` | `WardenWin::HandleCheckResult`, quando o cliente responde a um `SendLua` | saber que o listener foi instalado e enviar a parte 1 na hora |
 
 ### Portabilidade
 
@@ -153,7 +154,7 @@ Testado em jogo com os comandos `.debug bgui`, que eram um patch local de `cs_de
   partida o `StartTimer` conta só o tempo decorrido de combate, sem a preparação. O cliente mostra os dois tempos sem
   segundos, então menos de 1 minuto aparece vazio. Com esse status, o cliente também passa a esperar a coluna do EotS
   (Flag Captures) no placar: cada jogador precisa mandar 1 stat, senão aparece lixo de memória. A coluna mostra os
-  pontos que o jogador fez para o time (ticks como portador + bônus de kill); o payload a relabela como "Points"
+  pontos que o jogador fez para o time (ticks como portador + bônus de kill); a parte 1 do payload a relabela como "Points"
   (tooltip próprio, sem o ícone de flag do EotS) e, por usar o caminho sem ícone do cliente, valores 0 aparecem como `0`.
 - **Spirit Healer:** funciona como nas BGs. Ao entrar no range do spirit guide com o ghost, o cliente manda
   `CMSG_AREA_SPIRIT_HEALER_QUEUE` (`AREA_SPIRIT_HEALER_IN_RANGE` → `AcceptAreaSpiritHeal()` + `StaticPopup_Show("AREA_SPIRIT_HEAL")`),
@@ -170,10 +171,10 @@ Testado em jogo com os comandos `.debug bgui`, que eram um patch local de `cs_de
   fake (active ou queued) e reenvia o active assim que o jogador entra no mundo. Clicar no ícone abre o placar. O nome
   "Eye of the Storm" vem do `BattlemasterList.dbc` do cliente e não pode ser trocado sem patch.
 - **Lista de BGs da janela PvP (aba Battlegrounds):** o `PVPBattlegroundFrame` lista os tipos do
-  `BattlemasterList.dbc` (que não tem id livre). O payload expõe uma entrada sintética "Heart of Acherus"
+  `BattlemasterList.dbc` (que não tem id livre). A parte 1 do payload expõe uma entrada sintética "Heart of Acherus"
   **envolvendo `GetNumBattlegroundTypes`/`GetBattlegroundInfo`** (mais uma entrada, no fim): assim o próprio
   `PVPBattleground_UpdateBattlegrounds` conta a linha, desenha e inclui no range do `FauxScrollFrame`, rolando
-  junto com as demais. Selecionar a linha (o payload intercepta `PVPBattleground_UpdateInfo`) troca o texto pela lore
+  junto com as demais. Selecionar a linha (a parte 1 intercepta `PVPBattleground_UpdateInfo`) troca o texto pela lore
   e o fundo pela **mesma textura do "Random Battleground"** (`Interface\PVPFrame\PvpRandomBg`, via `SetTexture` +
   `SetTexCoord` do XML no `PVPBattlegroundFrameBGTex`), o que dá tamanho/posição/alpha/camada idênticos às outras
   BGs sem depender de um asset de Acherus (o loading screen do Ebon Hold é escuro e não serve). "Join"/"Join as
@@ -181,9 +182,14 @@ Testado em jogo com os comandos `.debug bgui`, que eram um patch local de `cs_de
   reposicionado na hora pelo `AcherusBG_UI.Relabel` (o status pode chegar antes do flag `active`).
   Enquanto a fila Acherus está ativa
   (`AcherusBG_UI.active`), o ícone de queue é movido da linha do EotS para a linha Acherus; o EotS real continua
-  na lista. (O payload também corrige o alvo morto do relabel: `PVPBattlefieldFrame` não existe — o frame é
-  `PVPBattlegroundFrame`.)
-- **Marcadores das runas no minimapa:** ícones desenhados por Lua (payload do cliente) parentados ao `Minimap`, um por
+  na lista. (A parte 1 também corrige o alvo morto do relabel: `PVPBattlefieldFrame` não existe — o frame é
+  `PVPBattlegroundFrame`.) Como os wrappers só valem a partir do load da parte 1, se a aba Battlegrounds já
+  estiver aberta quando ela é aplicada a lista foi montada sem a entrada: a parte 1 então força um
+  `PVPBattleground_UpdateBattlegrounds` na hora (chamada direta) e, por segurança, no `OnShow` do frame quando
+  a entrada ainda não está visível. A entrada é identificada pelo **nome exibido na linha** ("Heart of
+  Acherus"), não pelo índice: `BGindex` é só o número da linha, e o índice 2 é ambíguo (é o da nossa entrada e
+  também o de uma BG real quando a lista foi montada sem o wrapper).
+- **Marcadores das runas no minimapa:** ícones desenhados por Lua (parte 2 do payload) parentados ao `Minimap`, um por
   runa, com o ícone da presença de DK (Frost/Blood/Unholy) em 18×18 e recortado via `SetTexCoord` em texels inteiros do
   ícone de 64×64 (0.0625/0.9375, tira a borda clara embutida sem misturar a linha de borda fracionária). Como o 3.3.5
   não expõe filtro/mipmap/snapping por textura, o marcador só é re-ancorado quando anda ≥1 px, para não re-rasterizar o
@@ -199,7 +205,7 @@ Testado em jogo com os comandos `.debug bgui`, que eram um patch local de `cs_de
   (BG, tracking, zoom, mapa, correio, LFG), para que o ícone preso na borda não cubra os botões.
 - **Mensagens de runa:** `CHAT_MSG_RAID_BOSS_EMOTE`, que o cliente mostra em amarelo no centro da tela e também no
   chat. O nome da runa vai colorido com códigos `|c` (Frost azul, Blood vermelho, Unholy verde).
-- **Aura do portador:** os Portal States (33338/33339/33340) aparecem na barra de buffs e o `acherus_orbs_ui.lua` os
+- **Aura do portador:** os Portal States (33338/33339/33340) aparecem na barra de buffs e o `acherus_orbs_match.lua` os
   relabela (ícone de spell de DK, nome e descrição) no jogador, target, boss, raid e no tooltip do party, além do FCT
   (`CombatText_AddMessage`). A identificação é pelo nome localizado da spell, já que os três portais compartilham o
   mesmo ícone do DBC. O combat log não é alterável por Lua.
@@ -299,7 +305,7 @@ de cenário; tudo some quando a runa é pega e volta quando ela retorna (`SetFor
 | Unholy | 10297, da Unholy Presence (48265) | 43161 + 43167 Spirit Particles + 33339 Green Portal State |
 
 O corpo do portador combina partículas de espírito (o mesmo visual das forjas, agora nas auras do portador) com os
-Portal States. Os Portal States são dummy e **visíveis** na barra de buffs; o `acherus_orbs_ui.lua` reescreve o ícone,
+Portal States. Os Portal States são dummy e **visíveis** na barra de buffs; o `acherus_orbs_match.lua` reescreve o ícone,
 o nome e o tooltip de cada um (ícones de spell de DK, "Frost Rune"/"Blood Rune"/"Unholy Rune"), para um DK não terminar
 com dois ícones de presença idênticos na barra. As partículas (`31954`/`31951`/`43167`/`43161`, todas `spell_frost_wisp`)
 não são relabeladas: mantêm o próprio ícone na barra. As Banish State usadas antes (33344/33343/32567) têm
@@ -310,7 +316,7 @@ suma (clique-direito), para o estado do servidor não dessincronizar do cliente.
 
 O servidor espelha as stacks do portador nas **charges** do portal: como o `CumulativeAura` (o `StackAmount` do
 servidor) dos portais é 0 no DBC, o campo `Applications` do pacote de aura usa as charges, então `SetCharges` faz o
-cliente mostrar o número de stacks no ícone e o `acherus_orbs_ui.lua` calcula os totais atuais (dano feito/tomado,
+cliente mostrar o número de stacks no ícone e o `acherus_orbs_match.lua` calcula os totais atuais (dano feito/tomado,
 cura recebida, escala) a partir desse count — para qualquer unidade, lendo `UnitBuff`. As stacks continuam subindo a
 cada 15 s, mas os quatro modificadores congelam em **5 acúmulos** nos tetos +100% dano feito, +100% dano tomado,
 −50% cura recebida e +100% escala (o número no ícone continua contando).
@@ -342,12 +348,14 @@ AcherusOrbs.MinPlayersPerTeam = 10
 AcherusOrbs.KillBonus = 10
 AcherusOrbs.ClientUi = 0
 AcherusOrbs.ClientLuaFile =
+AcherusOrbs.ClientMatchLuaFile =
 ```
 
 As chaves não estão no `worldserver.conf.dist` (que é do core); no ambiente de teste foram adicionadas ao fim do
 `worldserver.conf`, numa seção "HEART OF ACHERUS". Sem elas, os valores padrão acima são usados (o log avisa).
-São lidas no `OnStartup` e no `.reload config`. `ClientLuaFile` (caminho do `.lua`) não tem padrão: com
-`ClientUi = 1` e sem ele o relabel fica desligado.
+São lidas no `OnStartup` e no `.reload config`. `ClientLuaFile` (parte 1, login) e `ClientMatchLuaFile`
+(parte 2, match) são os caminhos dos `.lua` e não têm padrão: com `ClientUi = 1` e sem o da parte 1, o relabel
+fica desligado; sem o da parte 2, só a UI de login é aplicada.
 
 ## Relabel de UI no cliente (Warden::SendLua + addon messages)
 
@@ -355,6 +363,17 @@ Os rótulos que o cliente herda do Eye of the Storm ("Bases", o nome no minimapa
 vêm de DBC/FrameXML do cliente e não podem ser trocados pelo servidor. Para trocá-los sem distribuir
 addon, o módulo instala um listener de `CHAT_MSG_ADDON` no cliente **via `Warden::SendLua`** (on demand,
 fora do agendador de checks) e então envia o Lua de UI por addon messages.
+
+O Lua de UI é dividido em **duas partes**, cada uma em seu arquivo (config `AcherusOrbs.ClientLuaFile` e
+`AcherusOrbs.ClientMatchLuaFile`):
+
+| Parte | Guard no cliente | Conteúdo | Quando é enviada |
+|---|---|---|---|
+| **1 — login** (`acherus_orbs_login.lua`) | `AcherusBG_UI` | entrada sintética "Heart of Acherus" na lista de BGs, nome no botão do minimapa/dropdown, notificador de `PLAYER_LOGOUT` e os helpers usados pela parte 2 | no login, para **todos** os jogadores |
+| **2 — match** (`acherus_orbs_match.lua`) | `AcherusBG_Part2` | auras do portador da runa, marcadores no minimapa e livro de instruções | ao entrar na fila/partida, se ainda não tiver |
+
+A parte 2 estende a parte 1 pela tabela `AcherusBG_UI` (que expõe `TITLE`, `LocalizedAcherusName`,
+`IsInAcherusMatch`, `IsRealEyeOfTheStorm` e `AcherusQueueStatus`) e só se aplica se a parte 1 já estiver lá.
 
 O payload **não casa texto em inglês** (clientes em outro idioma, ou com patch de tradução, quebrariam):
 o nome do battleground é pedido à própria API (`GetBattlefieldStatus`, que devolve o nome localizado que o
@@ -382,59 +401,71 @@ branco).
 2. O listener só executa o Lua quando **o remetente é o próprio jogador** (`s==UnitName"player"`), porque
    o módulo envia tudo em nome do jogador (`Chat::Initialize` com `sender == player`). Outro jogador que
    mandar `AcherusBG` chega com o próprio nome e é ignorado. O `pcall` engole mensagens malformadas.
-3. O `SendBootstrap` (Warden) é disparado **direto no login** (sessão nova). Nos demais gatilhos (entrada na
-   fila, entrada na partida, `OnRequestBattlefieldStatus` — que cobre `/reload`) o módulo envia apenas um
-   **probe** por addon message, barato:
+3. O `SendBootstrap` (Warden) é disparado **direto no login** (sessão nova) e quando um probe expira. Ao
+   responder ao eval 2, `OnWardenLuaExecuted` já envia a **parte 1** (as listas `_clientsWithPart` são
+   limpas no bootstrap, já que o listener novo implica ambiente Lua novo); a **parte 2** segue do ack da
+   parte 1 quando o jogador está na fila/partida. Os demais gatilhos (entrada na fila, entrada na partida,
+   `OnRequestBattlefieldStatus`, probe periódico) mandam só um **probe** barato:
    ```lua
-   if AcherusBG_UI then SendAddonMessage('AcherusBG','return 2','GUILD')else SendAddonMessage('AcherusBG','return 1','GUILD')end
+   local f=0 if AcherusBG_UI then f=f+1 end if AcherusBG_Part2 then f=f+2 end SendAddonMessage('AcherusBG','return '..f,'WHISPER',UnitName'player')
    ```
-   - `return 2` → script já aplicado (nada a fazer).
-   - `return 1` → listener presente, falta o payload → `OnAddonMessage` envia o script.
+   - `return 1` → tem a parte 1; `return 2` → tem a parte 2; `return 3` → tem as duas; `return 0` → listener
+     presente, nenhuma parte.
+   - o servidor marca as listas `_clientsWithPart[PAYLOAD_LOGIN]`/`_clientsWithPart[PAYLOAD_MATCH]` e
+     reenvia só o que falta.
    - sem resposta em **1 s** → o listener está ausente → `SendBootstrap` (Warden); quando o cliente responde
-     ao `SendLua`, o hook `OnWardenLuaExecuted` envia o eval 2 e, em seguida, o payload.
-4. O payload (`client/acherus_orbs_ui.lua`) vai em blocos (prefixo `AcherusBG`), terminando com
-   `loadstring(AcherusBG_Payload)()`.
-   O cooldown do pedido é de 5 s. A recuperação após `/reload` vem do pedido de status do cliente
-   (`OnRequestBattlefieldStatus`); há ainda um probe periódico de segurança (**25 s**) para quem está em
-   partida/fila, que leva o refresh do `active` na mesma mensagem (probe + toggle combinados) e é
-   rate-limitado (não reenvia enquanto um probe está em voo). Cooldown de bootstrap de **1.5 s**.
-   Quando um pedido de bootstrap ou de payload chega durante o cooldown (ou quando `Warden::SendLua` não
-   consegue enviar), o jogador entra numa fila de reenvio e o pedido é refeito no primeiro update após o
-   cooldown expirar — sem depender do próximo probe.
+     ao `SendLua`, o hook `OnWardenLuaExecuted` envia o eval 2 e, em seguida, a parte 1.
+4. Cada parte vai em blocos (prefixo `AcherusBG`), com seu próprio acumulador (`AcherusBG_P1`/`AcherusBG_P2`).
+   A linha final roda o payload e, em caso de erro do `pcall`, reporta de volta — `return -2` (login) ou
+   `return -3` (match) — para o servidor logar e reenviar; o sucesso é o ack que o próprio payload manda.
+   **Confirmação de entrega:** logo após o push o servidor manda um probe; se a parte não estiver aplicada, a
+   resposta re-pede o reenvio, e se não houver resposta em **1 s** o listener é reinstalado via Warden. O
+   cooldown do pedido é de **1.5 s** e o do bootstrap de **1.5 s**; há ainda um probe periódico de segurança
+   (**25 s**) para quem está em partida/fila, que leva o refresh do `active` na mesma mensagem (probe + toggle
+   combinados) e é rate-limitado (não reenvia enquanto um probe está em voo). Quando um pedido chega durante o
+   cooldown (ou quando `Warden::SendLua` não consegue enviar), o jogador entra numa fila de reenvio e o pedido
+   é refeito no primeiro update após o cooldown expirar — sem depender do próximo probe. Cada parte tem um
+   **teto de 3 tentativas** (`MaxPayloadAttempts`): estourou, o servidor loga o erro em `scripts` e para (evita
+   loop num `.lua` genuinamente quebrado); o contador zera no ack, no `PLAYER_LOGOUT`/`/reload` e no login.
    Cada bloco é um long-string `[==[ ... ]==]`; como o Lua **ignora a quebra de linha logo após o `[==[`**,
    o servidor prefixa cada bloco com um `\n` artificial — assim o `\n` ignorado é o nosso e o payload chega
-   byte a byte, mesmo quando a fronteira do bloco cai num `\n` do arquivo (sem isso, um `\n` no início de um
-   bloco é engolido e pode fundir duas linhas, quebrando a sintaxe do `loadstring(AcherusBG_Payload)`).
-5. O `acherus_orbs_ui.lua` é idempotente (guarda `AcherusBG_UI`) e reaplica os relabels nos updates dos
-   frames; ao terminar, o script manda `AcherusBG\treturn 2` e o servidor loga "applied the client UI script".
-   O toggle de `AcherusBG_UI.active` (enviado pelo servidor nas transições de fila/partida) chama
-   `AcherusBG_UI.Relabel()` no mesmo instante, então o relabel é aplicado imediatamente — sem esperar o
-   próximo update de world state (que só acontece a cada 5 s na partida). Na transição inativo→ativo, o
-   `Relabel` também re-dispara uma vez os updates nativos da barra de buffs (`BuffFrame_Update`,
-   `TargetFrame_UpdateAuras`) para que o relabel das auras do portador apareça logo após um `/reload`: a
-   barra já foi desenhada com o ícone do portal antes de o payload chegar, e os hooks só rodam no próximo
-   update de aura, que uma aura permanente nunca dispara.
+   byte a byte, mesmo quando a fronteira do bloco cai num `\n` do arquivo.
+5. Cada arquivo é idempotente (guardas `AcherusBG_UI`/`AcherusBG_Part2`) e reaplica os relabels nos updates
+   dos frames; ao terminar, manda `AcherusBG\treturn 1` (parte 1) ou `return 3` (parte 2) e o servidor loga
+   "applied both client UI parts". O toggle de `AcherusBG_UI.active` (enviado pelo servidor nas transições de
+   fila/partida) chama `AcherusBG_UI.Relabel()` no mesmo instante, então o relabel é aplicado imediatamente —
+   sem esperar o próximo update de world state (que só acontece a cada 5 s na partida). Na transição
+   inativo→ativo, o `Relabel` (estendido pela parte 2) também re-dispara uma vez os updates nativos da barra
+   de buffs (`BuffFrame_Update`, `TargetFrame_UpdateAuras`) para que o relabel das auras do portador apareça
+   logo após um `/reload`: a barra já foi desenhada com o ícone do portal antes de o payload chegar, e os
+   hooks só rodam no próximo update de aura, que uma aura permanente nunca dispara.
 
-**Por que os corpos do handshake/ack são `return 1`/`return 2`:** as mensagens do modo são interceptadas
-no hook `OnPlayerAddonMessage` (`ChatHandler.cpp`), que retorna antes do `Guild::BroadcastToGuild` — então
-elas **não são ecoadas** para a guilda. Ainda assim os corpos são Lua válido (`return 1`/`return 2`),
-porque um corpo cru (`R`/`DONE`) seria um erro de sintaxe caso alguma mensagem viesse a ser reenviada.
+**Canal dos acks:** os corpos vão por **whisper para si mesmo** (`SendAddonMessage(prefix, body, 'WHISPER',
+UnitName('player'))`), que funciona **sem guilda** — ao contrário de `'GUILD'`, que imprime "You are not in a
+guild." e não envia nada para quem não tem guilda. O servidor recebe como `CHAT_MSG_WHISPER` `LANG_ADDON` e
+trata no hook `OnAddonMessage`; os corpos continuam Lua válido (`return N`, `return -1`), inofensivos se
+ecoados.
 
-**Detalhes do `.lua`:** o arquivo é lido em binário e o `\r` é removido no servidor (o cliente pode cortar
-mensagens de chat em CR/LF). O hook do tooltip do minimapa (`MiniMapBattlefieldFrame`) é feito de forma
-preguiçosa dentro do `RelabelAll` (o botão pode não existir quando o payload roda) e usa `HookScript` no
-`OnUpdate` do frame (o texto é reescrito a cada frame pelo `MiniMapBattlefieldFrame_OnUpdate` nativo),
+**Detalhes dos `.lua`:** os arquivos são lidos em binário e o `\r` é removido no servidor (o cliente pode
+cortar mensagens de chat em CR/LF). O hook do tooltip do minimapa (`MiniMapBattlefieldFrame`) é feito de
+forma preguiçosa dentro do `RelabelAll` (o botão pode não existir quando a parte 1 roda) e usa `HookScript`
+no `OnUpdate` do frame (o texto é reescrito a cada frame pelo `MiniMapBattlefieldFrame_OnUpdate` nativo),
 trocando o nome localizado do battleground (obtido via `GetBattlefieldStatus`) por "Heart of Acherus" em
 todas as linhas do tooltip.
 
 **Por que o handshake não fica no bootstrap:** o wrapper do Warden é
 `local S,T,R=SendAddonMessage,function() <code> end ...`; em Lua os inicializadores de `local` são
 avaliados antes de `S` existir, então o `<code>` não enxerga esse `S` (referência vira global nil). Por
-isso o aviso ao servidor sai pelo ping, não de dentro do bootstrap.
+isso o aviso ao servidor sai pelo ping/probe, não de dentro do bootstrap.
 
-**`/reload`:** o servidor não detecta reload, mas o cliente pede o status da fila ao montar a UI; o
-`OnRequestBattlefieldStatus` envia um probe, o timeout de 1 s dispara o bootstrap (cooldown 1.5 s), o listener
-se reinstala e o payload é reenviado.
+**`/reload`:** o `acherus_orbs_login.lua` registra `PLAYER_LOGOUT`, que o cliente dispara tanto no logout
+quanto no `/reload`, e manda `return -1`. O servidor **não usa timer**: apenas limpa as listas de partes/
+`_listenerInstalled` e marca o jogador em `_pendingResync`. Como o cliente que está apenas recarregando manda
+de novo o pedido de status da UI (`CMSG_BATTLEFIELD_STATUS` → `OnRequestBattlefieldStatus`, para qualquer
+jogador), esse pedido consume o flag e chama `ResyncClient` — que reinstala o listener e reenvia a parte 1 (e,
+pelo ack dela, a parte 2 se estiver na fila/partida). `Enqueue` e `AddPlayer` também consomem o flag como
+seguro. Já o logout real não pede mais nada e é cancelado pelo `OnLogout`, que limpa toda a entrada. Sem o
+timer, some a corrida entre o grace de 3 s e o probe.
 
 **Warden:** o bootstrap não usa o agendador de checks — o check 9900 de `warden_checks` foi **removido** e
 o Warden fica na configuração padrão (`NumInjectionChecks=9`, `ClientCheckHoldOff=30`). O `SendLua` ocupa
@@ -512,7 +543,7 @@ Implementado e compilado, **ainda não testado em jogo**:
 - comando `.acherus begin` (pular a preparação);
 - botão de BG no minimapa na fila, na preparação e durante a partida (via `OnRequestBattlefieldStatus`), com o "Leave Queue" da janela PvP saindo da fila (`OnBattlefieldPort`), e placar ao vivo sob demanda (`OnPVPLogDataRequest`) com a coluna de pontos por jogador atualizando;
 - regra de fila exclusiva: quem já está em fila de BG/arena real não entra na fila do Acherus (`InBattlegroundQueue`);
-- relabel de UI no cliente via Warden (`OnAddonMessage` + `acherus_orbs_ui.lua`, sem check dedicado em `warden_checks`), validado em jogo (exige `Warden.Enabled=1`);
+- relabel de UI no cliente via Warden (`OnAddonMessage` + `acherus_orbs_login.lua`/`acherus_orbs_match.lua`, sem check dedicado em `warden_checks`), validado em jogo (exige `Warden.Enabled=1`);
 - sons, mensagens de runa no centro, Berserk e vitória validados; falta validar a cor amarela de "+N points"
   (`SendAreaTriggerMessage`), o Berserk virado para o poço e o 51721 para todos;
 - Banish State no portador sem ícone na barra de buffs, e a poça 990006 sem tooltip nem destaque no mouseover.
@@ -531,4 +562,4 @@ Implementado e compilado, **ainda não testado em jogo**:
 - Decidir se as forjas acendendo tocam som (proposta: 8232, `BG_WS_SOUND_FLAGS_RESPAWNED`).
 - NPC de fila para a Horda (hoje só em Old Town). Eventual entrada pelo "Random Battleground" da UI.
 - Adicionar as chaves de configuração ao `worldserver.conf.dist` ao integrar no servidor de destino (no módulo, sem elas valem os padrões).
-- Testar o relabel de UI no cliente: ligar `Warden.Enabled` e `AcherusOrbs.ClientUi`, apontar `ClientLuaFile` e ajustar os nomes de frame/função do `acherus_orbs_ui.lua` em jogo (foram escritos defensivos).
+- Testar o relabel de UI no cliente: ligar `Warden.Enabled` e `AcherusOrbs.ClientUi`, apontar `ClientLuaFile` e `ClientMatchLuaFile` e ajustar os nomes de frame/função dos `acherus_orbs_login.lua`/`acherus_orbs_match.lua` em jogo (foram escritos defensivos). Validar também o whisper-para-si em personagem sem guilda.

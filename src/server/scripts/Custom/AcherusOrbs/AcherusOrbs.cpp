@@ -86,29 +86,30 @@ namespace AcherusOrbs
         // forges and their visuals are seen from anywhere in the hall and outside it; only these objects, not the map setting
         constexpr VisibilityDistanceType ForgeVisibility = VisibilityDistanceType::Large;
 
-        // client-side UI relabel: the Warden bootstrap listener and the pushed payload share this prefix
+        // client-side UI relabel: the Warden bootstrap listener and the pushed payloads share this prefix
         constexpr char ClientScriptPrefix[] = "AcherusBG";
-        constexpr uint32 ClientScriptCooldown = 5 * IN_MILLISECONDS;
+        constexpr uint32 ClientScriptCooldown = 1500;              // 1.5 s, retry of a failed part push
         constexpr uint32 ClientBootstrapCooldown = 1500;           // 1.5 s
         constexpr uint32 ClientBootstrapTimeout = 1 * IN_MILLISECONDS;
+        constexpr uint8 MaxPayloadAttempts = 3;                    // give up logging after this many failed pushes
 
         // installed through Warden::SendLua in two evals (each under the 166 char Lua limit): the frame is
         // created and registered first, then the OnEvent handler is set. pcall swallows malformed messages.
         constexpr char ClientBootstrap1[] = "AcherusBG_Listener=AcherusBG_Listener or CreateFrame\"Frame\"AcherusBG_Listener:RegisterEvent\"CHAT_MSG_ADDON\"";
         constexpr char ClientBootstrap2[] = "AcherusBG_Listener:SetScript(\"OnEvent\",function(_,_,p,m,_,s)if p==\"AcherusBG\"and s==UnitName\"player\"then pcall(loadstring(m))end end)";
 
-        // the client listener only runs Lua when the sender is the player itself; the probe reports whether the
-        // script is already applied (return 2) or still needed (return 1). The reply bodies are valid Lua
-        // no-ops because the guild broadcast echoes them back to the sender.
-        std::string ClientPingBody()
+        // The client listener only runs Lua when the sender is the player itself. The probe asks back a bitmask
+        // of the applied payload parts (1 = login, 2 = match) through a whisper to self, which reaches the
+        // server without a guild; the body is valid Lua so it stays a no-op if ever echoed back. assertRelabel
+        // folds the active flag refresh into the same message, so a ping to a queued/in-match client costs one.
+        std::string ClientProbeBody(bool assertRelabel)
         {
-            return Trinity::StringFormat("if AcherusBG_UI then SendAddonMessage('{}','return 2','GUILD')else SendAddonMessage('{}','return 1','GUILD')end", ClientScriptPrefix, ClientScriptPrefix);
-        }
-
-        // the same probe, with the active flag refresh folded in: a periodic ping costs one message
-        std::string ClientPingAndRelabelBody()
-        {
-            return Trinity::StringFormat("if AcherusBG_UI then AcherusBG_UI.active=true AcherusBG_UI.Relabel() SendAddonMessage('{}','return 2','GUILD')else SendAddonMessage('{}','return 1','GUILD')end", ClientScriptPrefix, ClientScriptPrefix);
+            std::string body = assertRelabel
+                ? "if AcherusBG_UI then AcherusBG_UI.active=true AcherusBG_UI.Relabel() end "
+                : "";
+            return body + Trinity::StringFormat(
+                "local f=0 if AcherusBG_UI then f=f+1 end if AcherusBG_Part2 then f=f+2 end "
+                "SendAddonMessage('{}','return '..f,'WHISPER',UnitName'player')", ClientScriptPrefix);
         }
 
         char const* TeamName(TeamId team)
@@ -195,39 +196,45 @@ namespace AcherusOrbs
         _killBonus = std::max(0, sConfigMgr->GetIntDefault("AcherusOrbs.KillBonus", 10));
 
         _clientUiEnabled = sConfigMgr->GetBoolDefault("AcherusOrbs.ClientUi", false);
-        _clientLuaFile = sConfigMgr->GetStringDefault("AcherusOrbs.ClientLuaFile", "");
+        _clientLuaFile[PAYLOAD_LOGIN] = sConfigMgr->GetStringDefault("AcherusOrbs.ClientLuaFile", "");
+        _clientLuaFile[PAYLOAD_MATCH] = sConfigMgr->GetStringDefault("AcherusOrbs.ClientMatchLuaFile", "");
         LoadClientScript();
     }
 
-    // the client UI script is an ordinary .lua file read at startup and on .reload config
+    // the client UI scripts are ordinary .lua files read at startup and on .reload config
     void Manager::LoadClientScript()
     {
-        _clientScript.clear();
+        for (std::string& script : _clientScript)
+            script.clear();
 
         if (!_clientUiEnabled)
             return;
 
-        if (_clientLuaFile.empty())
+        static constexpr std::array<char const*, PAYLOAD_PART_COUNT> PartNames = { "login", "match" };
+        for (uint8 part = 0; part < PAYLOAD_PART_COUNT; ++part)
         {
-            TC_LOG_INFO("scripts", "AcherusOrbs: AcherusOrbs.ClientUi is enabled but AcherusOrbs.ClientLuaFile is empty, client UI script disabled");
-            return;
+            if (_clientLuaFile[part].empty())
+            {
+                TC_LOG_INFO("scripts", "AcherusOrbs: AcherusOrbs.ClientUi is enabled but the client UI {} part file is empty, that part is disabled", PartNames[part]);
+                continue;
+            }
+
+            std::ifstream file(_clientLuaFile[part], std::ios::binary);
+            if (!file)
+            {
+                TC_LOG_ERROR("scripts", "AcherusOrbs: cannot open client UI {} part '{}'", PartNames[part], _clientLuaFile[part]);
+                continue;
+            }
+
+            std::ostringstream buffer;
+            buffer << file.rdbuf();
+            _clientScript[part] = buffer.str();
+
+            // the client may cut chat messages at CR/LF, so the payload is sent with LF only
+            _clientScript[part].erase(std::remove(_clientScript[part].begin(), _clientScript[part].end(), '\r'), _clientScript[part].end());
+
+            TC_LOG_INFO("scripts", "AcherusOrbs: loaded client UI {} part ({} bytes) from '{}'", PartNames[part], _clientScript[part].size(), _clientLuaFile[part]);
         }
-
-        std::ifstream file(_clientLuaFile, std::ios::binary);
-        if (!file)
-        {
-            TC_LOG_ERROR("scripts", "AcherusOrbs: cannot open client UI script '{}'", _clientLuaFile);
-            return;
-        }
-
-        std::ostringstream buffer;
-        buffer << file.rdbuf();
-        _clientScript = buffer.str();
-
-        // the client may cut chat messages at CR/LF, so the payload is sent with LF only
-        _clientScript.erase(std::remove(_clientScript.begin(), _clientScript.end(), '\r'), _clientScript.end());
-
-        TC_LOG_INFO("scripts", "AcherusOrbs: loaded client UI script ({} bytes) from '{}'", _clientScript.size(), _clientLuaFile);
     }
 
     void Manager::SendAddonMessage(Player* player, std::string const& text)
@@ -238,76 +245,124 @@ namespace AcherusOrbs
     }
 
     // the client only relabels while the server says the Eye of the Storm it sees is the Heart of Acherus fake;
-    // the body is valid Lua executed by the listener, and a no-op while the payload is not applied
+    // the body is valid Lua executed by the listener, and a no-op while the login part is not applied
     void Manager::SetClientRelabel(Player* player, bool active) const
     {
-        if (!_clientUiEnabled || _clientScript.empty() || !player)
+        if (!_clientUiEnabled || _clientScript[PAYLOAD_LOGIN].empty() || !player)
             return;
 
         SendAddonMessage(player, active ? "if AcherusBG_UI then AcherusBG_UI.active=true AcherusBG_UI.Relabel() end" : "if AcherusBG_UI then AcherusBG_UI.active=false AcherusBG_UI.Relabel() end");
     }
 
-    // pushes the payload, or remembers the request while the send cooldown is active (retried on expiry)
-    void Manager::RequestClientScript(Player* player)
+    // pushes one payload part, or remembers the request while the send cooldown is active (retried on expiry).
+    // The blocks only run through the client listener, so with no listener installed the bootstrap is redone
+    // instead (it ends by pushing the login part; the match part follows from that ack).
+    void Manager::RequestClientScript(Player* player, PayloadPart part)
     {
-        if (!_clientUiEnabled || _clientScript.empty())
+        if (!_clientUiEnabled || _clientScript[part].empty() || !player)
             return;
 
+        ObjectGuid const guid = player->GetGUID();
+        bool needsBootstrap = false;
         {
             std::lock_guard<std::mutex> lock(_queueLock);
-            auto itr = _clientScriptCooldowns.find(player->GetGUID());
-            if (itr != _clientScriptCooldowns.end() && itr->second)
-            {
-                _pendingPayloads.insert(player->GetGUID());
+            if (_clientsWithPart[part].contains(guid))
                 return;
-            }
 
-            _clientScriptCooldowns[player->GetGUID()] = ClientScriptCooldown;
-            _pendingPayloads.erase(player->GetGUID());
+            if (!_listenerInstalled.contains(guid))
+                needsBootstrap = true;
+            else
+            {
+                auto& cooldowns = _clientPartCooldowns[part];
+                auto itr = cooldowns.find(guid);
+                if (itr != cooldowns.end() && itr->second)
+                {
+                    _pendingParts[part].insert(guid);
+                    return;
+                }
+
+                cooldowns[guid] = ClientScriptCooldown;
+                _pendingParts[part].erase(guid);
+            }
         }
 
-        SendClientScript(player);
+        if (needsBootstrap)
+        {
+            SendBootstrap(player);
+            return;
+        }
+
+        SendClientScript(player, part);
     }
 
-    // each message is valid Lua executed by the client listener: B accumulates the script, the last one runs it
-    void Manager::SendClientScript(Player* player)
+    // each message is valid Lua executed by the client listener: the accumulator builds the script, the last
+    // one runs it. Each part uses its own accumulator so an interleaved resend cannot corrupt the other part.
+    void Manager::SendClientScript(Player* player, PayloadPart part)
     {
-        if (_clientScript.empty())
+        std::string const& script = _clientScript[part];
+        if (script.empty())
             return;
 
-        if (_clientScript.find("]==]") != std::string::npos)
+        char const* partName = part == PAYLOAD_LOGIN ? "login" : "match";
+        if (script.find("]==]") != std::string::npos)
         {
-            TC_LOG_ERROR("scripts", "AcherusOrbs: client UI script contains ']==]' and cannot be sent");
+            TC_LOG_ERROR("scripts", "AcherusOrbs: client UI {} part contains ']==]' and cannot be sent", partName);
             return;
+        }
+
+        ObjectGuid const guid = player->GetGUID();
+        {
+            std::lock_guard<std::mutex> lock(_queueLock);
+            uint8& attempts = _clientPartAttempts[part][guid];
+            if (attempts >= MaxPayloadAttempts)
+            {
+                if (attempts == MaxPayloadAttempts)
+                {
+                    attempts = MaxPayloadAttempts + 1;              // log the give-up only once
+                    TC_LOG_ERROR("scripts", "AcherusOrbs: client UI {} part failed for {} after {} attempts, giving up", partName, player->GetName(), uint32(MaxPayloadAttempts));
+                }
+                return;
+            }
+            ++attempts;
         }
 
         constexpr std::size_t ChunkSize = 190;
+        char const* accumulator = part == PAYLOAD_LOGIN ? "AcherusBG_P1" : "AcherusBG_P2";
+        char const* failureBody = part == PAYLOAD_LOGIN ? "return -2" : "return -3";
 
-        TC_LOG_INFO("scripts", "AcherusOrbs: sending client UI script to {} ({} bytes)", player->GetName(), _clientScript.size());
+        TC_LOG_INFO("scripts", "AcherusOrbs: sending client UI {} part to {} ({} bytes)", partName, player->GetName(), script.size());
 
         bool first = true;
-        for (std::size_t offset = 0; offset < _clientScript.size(); offset += ChunkSize)
+        for (std::size_t offset = 0; offset < script.size(); offset += ChunkSize)
         {
             // a long string ignores the newline right after the opening bracket, so a chunk that starts
             // with one would lose it; the artificial leading newline is the one skipped, keeping the
             // payload byte-for-byte intact no matter where the chunk boundary falls
-            std::string body = first ? "AcherusBG_Payload=[==[\n" : "AcherusBG_Payload=AcherusBG_Payload..[==[\n";
+            std::string body = first
+                ? Trinity::StringFormat("{}=[==[\n", accumulator)
+                : Trinity::StringFormat("{}={}..[==[\n", accumulator, accumulator);
             first = false;
-            body += _clientScript.substr(offset, ChunkSize);
+            body += script.substr(offset, ChunkSize);
             body += "]==]";
             SendAddonMessage(player, body);
         }
 
-        SendAddonMessage(player, "loadstring(AcherusBG_Payload)()");
+        // run the payload; the payload acks success itself, on error report it back so the server retries
+        SendAddonMessage(player, Trinity::StringFormat(
+            "local f,e=loadstring({}) if not(f and pcall(f))then SendAddonMessage('{}','{}','WHISPER',UnitName'player')end",
+            accumulator, ClientScriptPrefix, failureBody));
 
         // the payload defaults to inactive, so re-assert the current state right after applying it
-        SetClientRelabel(player, GetMatch(player->GetGUID()) != nullptr || IsQueued(player->GetGUID()));
+        SetClientRelabel(player, GetMatch(guid) != nullptr || IsQueued(guid));
+
+        // confirm the push: the reply (or the 1 s probe timeout) drives the retry/bootstrap
+        ProbeClientScript(player);
     }
 
-    // pings the UI script to players in a match or in the queue; the body only replies while the script is not applied
+    // pings the UI script to players in a match or in the queue; the reply reports the applied parts
     void Manager::PingClientScript()
     {
-        if (!_clientUiEnabled || _clientScript.empty())
+        if (!_clientUiEnabled || _clientScript[PAYLOAD_LOGIN].empty())
             return;
 
         for (std::unique_ptr<Match> const& match : _matches)
@@ -332,7 +387,7 @@ namespace AcherusOrbs
     // installs the addon message listener through the Warden module, on demand (not the check scheduler)
     void Manager::SendBootstrap(Player* player)
     {
-        if (!_clientUiEnabled || _clientScript.empty())
+        if (!_clientUiEnabled || _clientScript[PAYLOAD_LOGIN].empty())
             return;
 
         {
@@ -358,18 +413,24 @@ namespace AcherusOrbs
         {
             std::lock_guard<std::mutex> lock(_queueLock);
             if (sent)
+            {
+                // a fresh listener means a fresh client Lua environment: forget what was applied before
+                _listenerInstalled.erase(player->GetGUID());
+                _clientsWithPart[PAYLOAD_LOGIN].erase(player->GetGUID());
+                _clientsWithPart[PAYLOAD_MATCH].erase(player->GetGUID());
                 _bootstrapListenerPending.insert(player->GetGUID());    // part 2 (OnEvent) on the next exec
+            }
             else
                 _pendingBootstraps.insert(player->GetGUID());           // Warden busy: retry when the cooldown expires
         }
     }
 
-    // cheap probe: if the listener is present it answers return 1/return 2; otherwise a timeout sends the
-    // bootstrap. A probe already in flight is left alone (rate limit); assertRelabel folds the active flag
-    // refresh into the same message, so a ping costs a single addon message
+    // cheap probe: if the listener is present it answers a bitmask of the applied parts; otherwise a timeout
+    // sends the bootstrap. A probe already in flight is left alone (rate limit); assertRelabel folds the active
+    // flag refresh into the same message, so a ping costs a single addon message
     void Manager::ProbeClientScript(Player* player, bool assertRelabel)
     {
-        if (!_clientUiEnabled || _clientScript.empty())
+        if (!_clientUiEnabled || _clientScript[PAYLOAD_LOGIN].empty())
             return;
 
         {
@@ -380,13 +441,14 @@ namespace AcherusOrbs
             _clientBootstrapTimeouts[player->GetGUID()] = ClientBootstrapTimeout;
         }
 
-        SendAddonMessage(player, assertRelabel ? ClientPingAndRelabelBody() : ClientPingBody());
+        SendAddonMessage(player, ClientProbeBody(assertRelabel));
     }
 
-    // the client processed a Warden Lua chunk: part 2 of the bootstrap, or the payload once the listener is up
+    // the client processed a Warden Lua chunk: part 2 of the bootstrap, or, once the listener is up, the login
+    // payload (the match part follows from the login part ack when the player is queued or in a match)
     void Manager::OnWardenLuaExecuted(Player* player)
     {
-        if (!_clientUiEnabled || _clientScript.empty())
+        if (!_clientUiEnabled || _clientScript[PAYLOAD_LOGIN].empty())
             return;
 
         bool listenerPending = false;
@@ -411,18 +473,22 @@ namespace AcherusOrbs
             return;
         }
 
+        // the OnEvent handler is set: the listener is up, push the login part
         {
             std::lock_guard<std::mutex> lock(_queueLock);
-            _pendingPayloads.erase(player->GetGUID());                   // the payload is being pushed now
+            _listenerInstalled.insert(player->GetGUID());
+            _pendingParts[PAYLOAD_LOGIN].erase(player->GetGUID());
+            _pendingParts[PAYLOAD_MATCH].erase(player->GetGUID());
         }
 
-        SendClientScript(player);
+        RequestClientScript(player, PAYLOAD_LOGIN);
     }
 
-    // the client listener answers the probe; return 1 means the script is still needed
+    // the client answers the probe with a bitmask of the applied parts (1 = login, 2 = match) and reports
+    // PLAYER_LOGOUT with return -1, both through a whisper to self
     void Manager::OnAddonMessage(Player* player, std::string const& msg, bool& handled)
     {
-        if (!_clientUiEnabled || _clientScript.empty())
+        if (!_clientUiEnabled || _clientScript[PAYLOAD_LOGIN].empty())
             return;
 
         std::string::size_type const tab = msg.find('\t');
@@ -437,26 +503,122 @@ namespace AcherusOrbs
             return;
 
         std::string const body = msg.substr(tab + 1);
-        if (body == "return 2")
+        ObjectGuid const guid = player->GetGUID();
+
+        // PLAYER_LOGOUT fires on both a real logout and a /reload. Mark the client dirty and clear the applied
+        // parts; the next request the player makes (OnRequestBattlefieldStatus, Enqueue, AddPlayer) decides
+        // between a resync (/reload) and nothing (a real logout, cancelled by OnLogout)
+        if (body == "return -1")
         {
-            {
-                std::lock_guard<std::mutex> lock(_queueLock);
-                _clientBootstrapTimeouts.erase(player->GetGUID());
-            }
-            TC_LOG_INFO("scripts", "AcherusOrbs: {} applied the client UI script", player->GetName());
+            std::lock_guard<std::mutex> lock(_queueLock);
+            _clientBootstrapTimeouts.erase(guid);
+            _listenerInstalled.erase(guid);
+            _clientsWithPart[PAYLOAD_LOGIN].erase(guid);
+            _clientsWithPart[PAYLOAD_MATCH].erase(guid);
+            for (uint8 part = 0; part < PAYLOAD_PART_COUNT; ++part)
+                _clientPartAttempts[part].erase(guid);          // a fresh client environment starts a new campaign
+            _pendingResync.insert(guid);
             return;
         }
 
-        if (body != "return 1")
+        // the client listener ran the payload but it failed: log and retry (the attempts cap bounds this)
+        if (body == "return -2" || body == "return -3")
+        {
+            PayloadPart const part = body == "return -2" ? PAYLOAD_LOGIN : PAYLOAD_MATCH;
+            TC_LOG_ERROR("scripts", "AcherusOrbs: {} failed to apply the client UI {} part", player->GetName(), part == PAYLOAD_LOGIN ? "login" : "match");
+            RequestClientScript(player, part);
             return;
+        }
+
+        if (!StringStartsWith(body, "return "))
+            return;
+
+        int32 const value = std::atoi(body.c_str() + 7);
+        bool const hasLogin = (value & 1) != 0;
+        bool const hasMatch = (value & 2) != 0;
 
         {
             std::lock_guard<std::mutex> lock(_queueLock);
-            _clientBootstrapTimeouts.erase(player->GetGUID());
+            _clientBootstrapTimeouts.erase(guid);
+            _pendingResync.erase(guid);
+            _listenerInstalled.insert(guid);                 // a reply proves the listener is installed
+            if (hasLogin)
+            {
+                _clientsWithPart[PAYLOAD_LOGIN].insert(guid);
+                _clientPartAttempts[PAYLOAD_LOGIN].erase(guid);
+            }
+            if (hasMatch)
+            {
+                _clientsWithPart[PAYLOAD_MATCH].insert(guid);
+                _clientPartAttempts[PAYLOAD_MATCH].erase(guid);
+            }
         }
 
-        TC_LOG_INFO("scripts", "AcherusOrbs: {} requested the client UI script", player->GetName());
-        RequestClientScript(player);
+        if (hasLogin && hasMatch)
+        {
+            TC_LOG_INFO("scripts", "AcherusOrbs: {} applied both client UI parts", player->GetName());
+            return;
+        }
+
+        bool const queuedOrMatch = IsQueued(guid) || IsInMatch(guid);
+        if (!hasLogin)
+        {
+            TC_LOG_INFO("scripts", "AcherusOrbs: {} requested the client UI login part", player->GetName());
+            RequestClientScript(player, PAYLOAD_LOGIN);
+        }
+        else if (queuedOrMatch)
+        {
+            TC_LOG_INFO("scripts", "AcherusOrbs: {} requested the client UI match part", player->GetName());
+            RequestClientScript(player, PAYLOAD_MATCH);
+        }
+
+        // a probe to a queued/in-match client also refreshes the relabel in the same round trip
+        if (queuedOrMatch)
+            SetClientRelabel(player, true);
+    }
+
+    // a PLAYER_LOGOUT notify that turned out to be a /reload: the client rebuilt its UI, so reinstall the
+    // listener and re-send the login part (the match part follows from its ack when the player is queued or in
+    // a match). SendBootstrap clears the stale listener/part flags first.
+    void Manager::ResyncClient(Player* player)
+    {
+        if (!_clientUiEnabled || _clientScript[PAYLOAD_LOGIN].empty())
+            return;
+
+        // the reload wiped the listener: force a fresh bootstrap even if the cooldown is still running
+        {
+            std::lock_guard<std::mutex> lock(_queueLock);
+            _clientBootstrapCooldowns.erase(player->GetGUID());
+        }
+
+        TC_LOG_INFO("scripts", "AcherusOrbs: {} reloaded the client UI, reinstalling the listener and payload", player->GetName());
+        SendBootstrap(player);
+    }
+
+    // drops every per-player client UI state (logout, and the start of a fresh session)
+    void Manager::ClearClientState(ObjectGuid guid)
+    {
+        std::lock_guard<std::mutex> lock(_queueLock);
+        _clientBootstrapCooldowns.erase(guid);
+        _clientBootstrapTimeouts.erase(guid);
+        _pendingBootstraps.erase(guid);
+        _bootstrapListenerPending.erase(guid);
+        _listenerInstalled.erase(guid);
+        _pendingResync.erase(guid);
+        for (uint8 part = 0; part < PAYLOAD_PART_COUNT; ++part)
+        {
+            _clientPartCooldowns[part].erase(guid);
+            _clientPartAttempts[part].erase(guid);
+            _pendingParts[part].erase(guid);
+            _clientsWithPart[part].erase(guid);
+        }
+    }
+
+    // true (and clears the flag) if the player reported PLAYER_LOGOUT and no request consumed it yet
+    bool Manager::ConsumePendingResync(ObjectGuid guid)
+    {
+        std::lock_guard<std::mutex> lock(_queueLock);
+        return _pendingResync.erase(guid) > 0;
     }
 
     // ----------------------------------------------------------------- queue
@@ -508,7 +670,17 @@ namespace AcherusOrbs
         }
 
         SendQueueStatus(player);
-        ProbeClientScript(player);
+
+        // a /reload detected here (in case the status request did not come) reinstalls the listener and login
+        // part; otherwise the match part follows as soon as the player is queued, and the probe covers a
+        // missing listener/parts
+        if (ConsumePendingResync(player->GetGUID()))
+            ResyncClient(player);
+        else
+        {
+            RequestClientScript(player, PAYLOAD_MATCH);
+            ProbeClientScript(player);
+        }
         return true;
     }
 
@@ -575,16 +747,18 @@ namespace AcherusOrbs
         std::vector<ObjectGuid> expiredBootstrap;
         {
             std::lock_guard<std::mutex> lock(_queueLock);
-            for (auto itr = _clientScriptCooldowns.begin(); itr != _clientScriptCooldowns.end();)
-            {
-                if (itr->second <= diff)
-                    itr = _clientScriptCooldowns.erase(itr);
-                else
+
+            for (auto& cooldowns : _clientPartCooldowns)
+                for (auto itr = cooldowns.begin(); itr != cooldowns.end();)
                 {
-                    itr->second -= diff;
-                    ++itr;
+                    if (itr->second <= diff)
+                        itr = cooldowns.erase(itr);
+                    else
+                    {
+                        itr->second -= diff;
+                        ++itr;
+                    }
                 }
-            }
 
             for (auto itr = _clientBootstrapCooldowns.begin(); itr != _clientBootstrapCooldowns.end();)
             {
@@ -619,16 +793,17 @@ namespace AcherusOrbs
 
         // requests dropped while a cooldown was active: send them as soon as it expires
         std::vector<ObjectGuid> retryBootstrap;
-        std::vector<ObjectGuid> retryPayload;
+        std::array<std::vector<ObjectGuid>, PAYLOAD_PART_COUNT> retryParts;
         {
             std::lock_guard<std::mutex> lock(_queueLock);
             for (ObjectGuid const& guid : _pendingBootstraps)
                 if (_clientBootstrapCooldowns.count(guid) == 0)
                     retryBootstrap.push_back(guid);
 
-            for (ObjectGuid const& guid : _pendingPayloads)
-                if (_clientScriptCooldowns.count(guid) == 0)
-                    retryPayload.push_back(guid);
+            for (uint8 part = 0; part < PAYLOAD_PART_COUNT; ++part)
+                for (ObjectGuid const& guid : _pendingParts[part])
+                    if (_clientPartCooldowns[part].count(guid) == 0)
+                        retryParts[part].push_back(guid);
         }
 
         for (ObjectGuid const& guid : retryBootstrap)
@@ -642,16 +817,17 @@ namespace AcherusOrbs
             }
         }
 
-        for (ObjectGuid const& guid : retryPayload)
-        {
-            if (Player* player = ObjectAccessor::FindConnectedPlayer(guid))
-                RequestClientScript(player);
-            else
+        for (uint8 part = 0; part < PAYLOAD_PART_COUNT; ++part)
+            for (ObjectGuid const& guid : retryParts[part])
             {
-                std::lock_guard<std::mutex> lock(_queueLock);
-                _pendingPayloads.erase(guid);
+                if (Player* player = ObjectAccessor::FindConnectedPlayer(guid))
+                    RequestClientScript(player, static_cast<PayloadPart>(part));
+                else
+                {
+                    std::lock_guard<std::mutex> lock(_queueLock);
+                    _pendingParts[part].erase(guid);
+                }
             }
-        }
 
         FillOpenMatches();
         TryCreateMatch();
@@ -1166,7 +1342,7 @@ namespace AcherusOrbs
     // client listener like the rest of the payload. Positions are world coordinates, the client converts them.
     void Manager::SendOrbMarkers(Match& match)
     {
-        if (!_clientUiEnabled || _clientScript.empty())
+        if (!_clientUiEnabled || _clientScript[PAYLOAD_MATCH].empty())
             return;
 
         for (auto const& entry : match.Players)
@@ -1388,7 +1564,14 @@ namespace AcherusOrbs
         if (player->IsGameMaster())
             ChatHandler(player->GetSession()).SendSysMessage("You are in GM mode and see every phase. Use .gm off to play the match.");
 
-        ProbeClientScript(player);
+        // the match part follows as soon as the player is in the match; the probe covers a missing listener/parts
+        if (ConsumePendingResync(player->GetGUID()))
+            ResyncClient(player);
+        else
+        {
+            RequestClientScript(player, PAYLOAD_MATCH);
+            ProbeClientScript(player);
+        }
     }
 
     void Manager::RemovePlayer(Match& match, ObjectGuid guid, RemoveMode mode)
@@ -2249,7 +2432,7 @@ namespace AcherusOrbs
     // red text on the screen like the client's own errors when the UI listener is installed, else a notification
     void Manager::SendUseError(Player* player, std::string const& text) const
     {
-        if (_clientUiEnabled && !_clientScript.empty())
+        if (_clientUiEnabled && !_clientScript[PAYLOAD_LOGIN].empty())
             SendAddonMessage(player, Trinity::StringFormat("UIErrorsFrame:AddMessage('{}',1,0.1,0.1,1)", text));
         else
             player->GetSession()->SendNotification("%s", text.c_str());
@@ -2439,23 +2622,14 @@ namespace AcherusOrbs
     void Manager::OnLogout(Player* player)
     {
         Dequeue(player->GetGUID());
-
-        {
-            std::lock_guard<std::mutex> lock(_queueLock);
-            _clientBootstrapTimeouts.erase(player->GetGUID());
-            _pendingBootstraps.erase(player->GetGUID());
-            _pendingPayloads.erase(player->GetGUID());
-            _bootstrapListenerPending.erase(player->GetGUID());
-        }
+        ClearClientState(player->GetGUID());
     }
 
     void Manager::OnLogin(Player* player)
     {
-        // fresh session: install the listener through Warden; its response pushes the payload
-        {
-            std::lock_guard<std::mutex> lock(_queueLock);
-            _clientBootstrapCooldowns.erase(player->GetGUID());
-        }
+        // fresh session: reset the client UI state and install the listener through Warden; its exec response
+        // pushes the login part
+        ClearClientState(player->GetGUID());
         SendBootstrap(player);
 
         // the rune is never kept across a login, its aura may still have been saved by a crash
@@ -2591,8 +2765,13 @@ namespace AcherusOrbs
     // battleground nothing answers it, so the minimap button of the mode is maintained here
     void Manager::OnRequestBattlefieldStatus(Player* player)
     {
-        // the client asks for the status when the UI loads or reloads, so probe the listener there too
-        ProbeClientScript(player);
+        // the client asks for the status when the UI loads or reloads. If it reported PLAYER_LOGOUT before this
+        // request, it was a /reload (a logging-out client would not ask again): resync it here instead of
+        // guessing with a timer. Otherwise just probe the listener.
+        if (ConsumePendingResync(player->GetGUID()))
+            ResyncClient(player);
+        else
+            ProbeClientScript(player);
 
         if (Match* match = GetMatch(player->GetGUID()))
         {

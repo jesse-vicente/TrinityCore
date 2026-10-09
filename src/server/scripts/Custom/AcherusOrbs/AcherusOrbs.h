@@ -387,6 +387,15 @@ namespace AcherusOrbs
         std::unordered_map<ObjectGuid, ObjectGuid> ResurrectQueue; // players waiting at a spirit healer for the next wave, mapped to that guide
     };
 
+    // the client UI Lua is split in two payloads: part 1 (login: battleground list entry, minimap name,
+    // logout notifier) goes to every player, part 2 (match UI) only to who is queued or in a match
+    enum PayloadPart : uint8
+    {
+        PAYLOAD_LOGIN = 0,
+        PAYLOAD_MATCH,
+        PAYLOAD_PART_COUNT
+    };
+
     class Manager
     {
     public:
@@ -502,13 +511,16 @@ namespace AcherusOrbs
         void ClearQueueStatus(ObjectGuid guid, Player* player);
         static BattlegroundQueueTypeId GetFakeQueueTypeId(Player const* player);
         void LoadClientScript();
-        void SendClientScript(Player* player);
-        void RequestClientScript(Player* player);
+        void SendClientScript(Player* player, PayloadPart part);
+        void RequestClientScript(Player* player, PayloadPart part);
         static void SendAddonMessage(Player* player, std::string const& text);
         void SetClientRelabel(Player* player, bool active) const;
         void PingClientScript();
         void SendBootstrap(Player* player);
         void ProbeClientScript(Player* player, bool assertRelabel = false);
+        void ResyncClient(Player* player);
+        void ClearClientState(ObjectGuid guid);
+        bool ConsumePendingResync(ObjectGuid guid);
         void Announce(Match& match, ChatMsg type, std::string const& text);
         void PlaySound(Match& match, uint32 soundId);
         Match* GetMatch(ObjectGuid guid) const;
@@ -516,14 +528,20 @@ namespace AcherusOrbs
         std::mutex _queueLock;
         std::array<std::deque<ObjectGuid>, PVP_TEAMS_COUNT> _queue;
         std::unordered_map<ObjectGuid, uint32> _queueStatusSlots;   // protected by _queueLock
-        std::unordered_map<ObjectGuid, uint32> _clientScriptCooldowns; // protected by _queueLock
-        std::unordered_map<ObjectGuid, uint32> _clientBootstrapCooldowns; // protected by _queueLock
-        std::unordered_map<ObjectGuid, uint32> _clientBootstrapTimeouts; // protected by _queueLock
+        // per-part client UI state, indexed by PayloadPart, all protected by _queueLock
+        std::array<std::unordered_map<ObjectGuid, uint32>, PAYLOAD_PART_COUNT> _clientPartCooldowns;
+        std::array<std::unordered_map<ObjectGuid, uint8>, PAYLOAD_PART_COUNT> _clientPartAttempts;
+        std::array<std::unordered_set<ObjectGuid>, PAYLOAD_PART_COUNT> _pendingParts;
+        std::array<std::unordered_set<ObjectGuid>, PAYLOAD_PART_COUNT> _clientsWithPart;
+        std::unordered_set<ObjectGuid> _listenerInstalled;
+        std::unordered_map<ObjectGuid, uint32> _clientBootstrapCooldowns;
+        std::unordered_map<ObjectGuid, uint32> _clientBootstrapTimeouts;
         // requests dropped while the matching cooldown was active, resent as soon as it expires
-        std::unordered_set<ObjectGuid> _pendingBootstraps;          // protected by _queueLock
-        std::unordered_set<ObjectGuid> _pendingPayloads;            // protected by _queueLock
+        std::unordered_set<ObjectGuid> _pendingBootstraps;
         // players whose listener bootstrap part 1 was sent and still need part 2 (the OnEvent handler)
-        std::unordered_set<ObjectGuid> _bootstrapListenerPending;   // protected by _queueLock
+        std::unordered_set<ObjectGuid> _bootstrapListenerPending;
+        // players that reported PLAYER_LOGOUT: the next request they make decides between /reload (resync) and logout
+        std::unordered_set<ObjectGuid> _pendingResync;
         std::vector<ObjectGuid> _pendingLeaves;                     // protected by _queueLock, handled in the world update
         bool _endAllRequested = false;
         std::vector<ObjectGuid> _preparationSkips;                  // protected by _queueLock, empty guid = every match
@@ -542,8 +560,8 @@ namespace AcherusOrbs
 
         // client-side UI relabel (Warden bootstrap + addon messages), see README
         bool _clientUiEnabled = false;
-        std::string _clientLuaFile;
-        std::string _clientScript;
+        std::array<std::string, PAYLOAD_PART_COUNT> _clientLuaFile;
+        std::array<std::string, PAYLOAD_PART_COUNT> _clientScript;
         uint32 _clientPingTimer = 0;
     };
 }
