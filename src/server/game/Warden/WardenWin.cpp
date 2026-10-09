@@ -28,6 +28,7 @@
 #include "Player.h"
 #include "Random.h"
 #include "SessionKeyGenerator.h"
+#include "ScriptMgr.h"
 #include "SmartEnum.h"
 #include "Util.h"
 #include "WardenModuleWin.h"
@@ -379,6 +380,8 @@ void WardenWin::HandleCheckResult(ByteBuffer &buff)
 {
     TC_LOG_DEBUG("warden", "Handle data");
 
+    bool const customLua = _customLuaInFlight;
+    _customLuaInFlight = false;
     _dataSent = false;
     _clientResponseTimer = 0;
 
@@ -402,6 +405,11 @@ void WardenWin::HandleCheckResult(ByteBuffer &buff)
         TC_LOG_WARN("warden", "{} failed checksum. Action: {}", _session->GetPlayerInfo(), penalty);
         return;
     }
+
+    // the client processed a Lua chunk sent through SendLua, let scripts react (e.g. push the payload)
+    if (customLua)
+        if (Player* player = _session->GetPlayer())
+            sScriptMgr->OnPlayerWardenLuaExecuted(player);
 
     // TIMING_CHECK
     {
@@ -557,4 +565,55 @@ size_t WardenWin::DEBUG_ForceSpecificChecks(std::vector<uint16> const& checks)
         _checks[category].second = _checks[category].first.begin();
 
     return n;
+}
+
+// Sends a single Lua chunk to the client through the Warden module, outside of the check scheduler.
+// The client executes it via FrameScript::Execute and answers with a regular checks result, which the
+// normal HandleCheckResult flow consumes (with an empty _currentChecks the per-check loop is a no-op).
+bool WardenWin::SendLua(std::string const& code)
+{
+    if (!_initialized || !_session->GetPlayer() || _dataSent)
+        return false;
+
+    if (code.size() > WARDEN_MAX_LUA_CHECK_LENGTH)
+        return false;
+
+    static constexpr std::array<char, 4> IdStr = { '0', '0', '0', '0' };
+
+    ByteBuffer buff;
+    buff << uint8(WARDEN_SMSG_CHEAT_CHECKS_REQUEST);
+
+    // single Lua check entry, same layout as RequestChecks
+    buff << uint8(sizeof(_luaEvalPrefix) - 1 + code.size() + sizeof(_luaEvalMidfix) - 1 + IdStr.size() + sizeof(_luaEvalPostfix) - 1);
+    buff.append(_luaEvalPrefix, sizeof(_luaEvalPrefix) - 1);
+    buff.append(code.data(), code.size());
+    buff.append(_luaEvalMidfix, sizeof(_luaEvalMidfix) - 1);
+    buff.append(IdStr.data(), IdStr.size());
+    buff.append(_luaEvalPostfix, sizeof(_luaEvalPostfix) - 1);
+
+    uint8 const xorByte = _inputKey[0];
+
+    // TIMING_CHECK
+    buff << uint8(0x00);
+    buff << uint8(TIMING_CHECK ^ xorByte);
+
+    // descriptor of the Lua check
+    buff << uint8(LUA_EVAL_CHECK ^ xorByte);
+    buff << uint8(1); // index
+
+    buff << uint8(xorByte);
+
+    EncryptData(buff.contents(), buff.size());
+
+    WorldPacket pkt(SMSG_WARDEN_DATA, buff.size());
+    pkt.append(buff);
+    _session->SendPacket(&pkt);
+
+    _serverTicks = GameTime::GetGameTimeMS();
+    _currentChecks.clear();
+    _dataSent = true;
+    _customLuaInFlight = true;
+
+    TC_LOG_DEBUG("warden", "Sent custom Lua to {} ({} bytes)", _session->GetPlayerInfo(), code.size());
+    return true;
 }

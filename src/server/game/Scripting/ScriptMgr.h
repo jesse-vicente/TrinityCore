@@ -74,6 +74,7 @@ struct MapEntry;
 struct Position;
 
 namespace Trinity::ChatCommands { struct ChatCommandBuilder; }
+namespace WorldPackets::WorldState { class InitWorldStates; }
 
 enum BattlegroundTypeId : uint32;
 enum ContentLevels : uint8;
@@ -721,6 +722,48 @@ class TC_GAME_API PlayerScript : public ScriptObject
         // Called when a player completes a movie
         virtual void OnMovieComplete(Player* player, uint32 movieId);
 
+        // Called before SMSG_INIT_WORLD_STATES is sent, allows changing its map/zone and world states
+        virtual void OnSendInitWorldStates(Player* player, WorldPackets::WorldState::InitWorldStates& packet);
+
+        // Called when a player requests to leave a battlefield (e.g. "Leave Battleground" button)
+        virtual void OnLeaveBattlefield(Player* player);
+
+        // Called right before a player is added to a battleground or arena queue
+        virtual void OnJoinBattlegroundQueue(Player* player);
+
+        // Called when the sanctuary state of the player's area is checked, set isSanctuary to override it
+        virtual void OnCheckSanctuary(Player* player, bool& isSanctuary);
+
+        // Called when the outdoors-only and indoors-only spell requirements are checked, set isOutdoors to override it
+        virtual void OnCheckOutdoors(Player* player, bool& isOutdoors);
+
+        // Called before a player is sent to a graveyard, set handled to skip the default graveyard teleport
+        virtual void OnRepopAtGraveyard(Player* player, bool& handled);
+
+        // Called when a player queries an area spirit healer's timer outside of battlegrounds and battlefields
+        virtual void OnSpiritHealerQuery(Player* player, Creature* spiritHealer, bool& handled);
+
+        // Called when a player queues at an area spirit healer outside of battlegrounds and battlefields
+        virtual void OnSpiritHealerQueue(Player* player, Creature* spiritHealer, bool& handled);
+
+        // Called when a player logs out, before the player is saved (OnLogout is called after the save)
+        virtual void OnBeforeLogout(Player* player);
+
+        // Called when a player requests the PvP scoreboard (MSG_PVP_LOG_DATA) outside of battlegrounds and battlefields
+        virtual void OnPVPLogDataRequest(Player* player);
+
+        // Called when a player requests the state of their battleground queues (CMSG_BATTLEFIELD_STATUS)
+        virtual void OnRequestBattlefieldStatus(Player* player);
+
+        // Called when a player ports into or out of a battlefield queue (CMSG_BATTLEFIELD_PORT), set handled to skip the default handling
+        virtual void OnBattlefieldPort(Player* player, uint64 queueID, bool acceptedInvite, bool& handled);
+
+        // Called when a client sends an addon message (LANG_ADDON), set handled to skip the default handling
+        virtual void OnAddonMessage(Player* player, std::string const& msg, bool& handled);
+
+        // Called when the client responds to a Lua chunk sent through Warden::SendLua
+        virtual void OnWardenLuaExecuted(Player* player);
+
 };
 
 class TC_GAME_API AccountScript : public ScriptObject
@@ -1036,6 +1079,20 @@ class TC_GAME_API ScriptMgr
         void OnQuestStatusChange(Player* player, uint32 questId);
         void OnMovieComplete(Player* player, uint32 movieId);
         void OnPlayerRepop(Player* player);
+        void OnPlayerSendInitWorldStates(Player* player, WorldPackets::WorldState::InitWorldStates& packet);
+        void OnPlayerLeaveBattlefield(Player* player);
+        void OnPlayerJoinBattlegroundQueue(Player* player);
+        bool OnPlayerCheckSanctuary(Player* player, bool isSanctuary);
+        bool OnPlayerCheckOutdoors(Player* player, bool isOutdoors);
+        bool OnPlayerRepopAtGraveyard(Player* player);
+        bool OnPlayerSpiritHealerQuery(Player* player, Creature* spiritHealer);
+        bool OnPlayerSpiritHealerQueue(Player* player, Creature* spiritHealer);
+        void OnPlayerBeforeLogout(Player* player);
+        void OnPlayerPVPLogDataRequest(Player* player);
+        void OnPlayerRequestBattlefieldStatus(Player* player);
+        bool OnPlayerBattlefieldPort(Player* player, uint64 queueID, bool acceptedInvite);
+        bool OnPlayerAddonMessage(Player* player, std::string const& msg);
+        void OnPlayerWardenLuaExecuted(Player* player);
 
     public: /* AccountScript */
 

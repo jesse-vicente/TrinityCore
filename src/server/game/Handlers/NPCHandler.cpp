@@ -178,6 +178,9 @@ void WorldSession::HandleGossipHelloOpcode(WorldPackets::NPC::Hello& packet)
             sBattlegroundMgr->SendAreaSpiritHealerQueryOpcode(_player, bg, unit->GetGUID());
             return;
         }
+
+        if (sScriptMgr->OnPlayerSpiritHealerQuery(_player, unit))
+            return;
     }
 
     _player->PlayerTalkClass->ClearMenus();

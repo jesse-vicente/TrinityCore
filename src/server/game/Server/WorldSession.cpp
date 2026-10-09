@@ -520,6 +520,8 @@ void WorldSession::LogoutPlayer(bool save)
         if (Battleground* bg = _player->GetBattleground())
             bg->EventPlayerLoggedOut(_player);
 
+        sScriptMgr->OnPlayerBeforeLogout(_player);
+
         sOutdoorPvPMgr->HandlePlayerLeaveZone(_player, _player->GetZoneId());
 
         for (int i=0; i < PLAYER_MAX_BATTLEGROUND_QUEUES; ++i)

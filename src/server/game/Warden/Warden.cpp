@@ -265,6 +265,11 @@ bool Warden::ProcessLuaCheckResponse(std::string const& msg)
     return true;
 }
 
+bool Warden::SendLua(std::string const& /*code*/)
+{
+    return false;
+}
+
 void WorldSession::HandleWardenDataOpcode(WorldPacket& recvData)
 {
     if (!_warden || recvData.empty())

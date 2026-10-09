@@ -189,6 +189,11 @@ void WorldSession::HandleChatMessage(ChatMsg type, Language lang, std::string ms
             return;
     }
 
+    // custom scripted modes may use addon messages as their own channel
+    if (lang == LANG_ADDON)
+        if (sScriptMgr->OnPlayerAddonMessage(sender, msg))
+            return;
+
     // no chat commands in AFK/DND autoreply, and it can be empty
     if (!(type == CHAT_MSG_AFK || type == CHAT_MSG_DND))
     {

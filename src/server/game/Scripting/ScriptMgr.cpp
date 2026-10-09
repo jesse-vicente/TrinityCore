@@ -1976,6 +1976,88 @@ void ScriptMgr::OnPlayerRepop(Player* player)
     FOREACH_SCRIPT(PlayerScript)->OnPlayerRepop(player);
 }
 
+void ScriptMgr::OnPlayerSendInitWorldStates(Player* player, WorldPackets::WorldState::InitWorldStates& packet)
+{
+    FOREACH_SCRIPT(PlayerScript)->OnSendInitWorldStates(player, packet);
+}
+
+void ScriptMgr::OnPlayerLeaveBattlefield(Player* player)
+{
+    FOREACH_SCRIPT(PlayerScript)->OnLeaveBattlefield(player);
+}
+
+void ScriptMgr::OnPlayerJoinBattlegroundQueue(Player* player)
+{
+    FOREACH_SCRIPT(PlayerScript)->OnJoinBattlegroundQueue(player);
+}
+
+bool ScriptMgr::OnPlayerCheckSanctuary(Player* player, bool isSanctuary)
+{
+    FOREACH_SCRIPT(PlayerScript)->OnCheckSanctuary(player, isSanctuary);
+    return isSanctuary;
+}
+
+bool ScriptMgr::OnPlayerCheckOutdoors(Player* player, bool isOutdoors)
+{
+    FOREACH_SCRIPT(PlayerScript)->OnCheckOutdoors(player, isOutdoors);
+    return isOutdoors;
+}
+
+bool ScriptMgr::OnPlayerRepopAtGraveyard(Player* player)
+{
+    bool handled = false;
+    FOREACH_SCRIPT(PlayerScript)->OnRepopAtGraveyard(player, handled);
+    return handled;
+}
+
+bool ScriptMgr::OnPlayerSpiritHealerQuery(Player* player, Creature* spiritHealer)
+{
+    bool handled = false;
+    FOREACH_SCRIPT(PlayerScript)->OnSpiritHealerQuery(player, spiritHealer, handled);
+    return handled;
+}
+
+bool ScriptMgr::OnPlayerSpiritHealerQueue(Player* player, Creature* spiritHealer)
+{
+    bool handled = false;
+    FOREACH_SCRIPT(PlayerScript)->OnSpiritHealerQueue(player, spiritHealer, handled);
+    return handled;
+}
+
+void ScriptMgr::OnPlayerBeforeLogout(Player* player)
+{
+    FOREACH_SCRIPT(PlayerScript)->OnBeforeLogout(player);
+}
+
+void ScriptMgr::OnPlayerPVPLogDataRequest(Player* player)
+{
+    FOREACH_SCRIPT(PlayerScript)->OnPVPLogDataRequest(player);
+}
+
+void ScriptMgr::OnPlayerRequestBattlefieldStatus(Player* player)
+{
+    FOREACH_SCRIPT(PlayerScript)->OnRequestBattlefieldStatus(player);
+}
+
+bool ScriptMgr::OnPlayerBattlefieldPort(Player* player, uint64 queueID, bool acceptedInvite)
+{
+    bool handled = false;
+    FOREACH_SCRIPT(PlayerScript)->OnBattlefieldPort(player, queueID, acceptedInvite, handled);
+    return handled;
+}
+
+bool ScriptMgr::OnPlayerAddonMessage(Player* player, std::string const& msg)
+{
+    bool handled = false;
+    FOREACH_SCRIPT(PlayerScript)->OnAddonMessage(player, msg, handled);
+    return handled;
+}
+
+void ScriptMgr::OnPlayerWardenLuaExecuted(Player* player)
+{
+    FOREACH_SCRIPT(PlayerScript)->OnWardenLuaExecuted(player);
+}
+
 void ScriptMgr::OnQuestObjectiveProgress(Player* player, Quest const* quest, uint32 objectiveIndex, uint16 progress)
 {
     FOREACH_SCRIPT(PlayerScript)->OnQuestObjectiveProgress(player, quest, objectiveIndex, progress);
@@ -2703,6 +2785,62 @@ void PlayerScript::OnPlayerRepop(Player* /*player*/)
 }
 
 void PlayerScript::OnMovieComplete(Player* /*player*/, uint32 /*movieId*/)
+{
+}
+
+void PlayerScript::OnSendInitWorldStates(Player* /*player*/, WorldPackets::WorldState::InitWorldStates& /*packet*/)
+{
+}
+
+void PlayerScript::OnLeaveBattlefield(Player* /*player*/)
+{
+}
+
+void PlayerScript::OnCheckSanctuary(Player* /*player*/, bool& /*isSanctuary*/)
+{
+}
+
+void PlayerScript::OnCheckOutdoors(Player* /*player*/, bool& /*isOutdoors*/)
+{
+}
+
+void PlayerScript::OnRepopAtGraveyard(Player* /*player*/, bool& /*handled*/)
+{
+}
+
+void PlayerScript::OnSpiritHealerQuery(Player* /*player*/, Creature* /*spiritHealer*/, bool& /*handled*/)
+{
+}
+
+void PlayerScript::OnSpiritHealerQueue(Player* /*player*/, Creature* /*spiritHealer*/, bool& /*handled*/)
+{
+}
+
+void PlayerScript::OnBeforeLogout(Player* /*player*/)
+{
+}
+
+void PlayerScript::OnPVPLogDataRequest(Player* /*player*/)
+{
+}
+
+void PlayerScript::OnRequestBattlefieldStatus(Player* /*player*/)
+{
+}
+
+void PlayerScript::OnBattlefieldPort(Player* /*player*/, uint64 /*queueID*/, bool /*acceptedInvite*/, bool& /*handled*/)
+{
+}
+
+void PlayerScript::OnAddonMessage(Player* /*player*/, std::string const& /*msg*/, bool& /*handled*/)
+{
+}
+
+void PlayerScript::OnWardenLuaExecuted(Player* /*player*/)
+{
+}
+
+void PlayerScript::OnJoinBattlegroundQueue(Player* /*player*/)
 {
 }
 

@@ -4802,6 +4802,12 @@ void Player::RepopAtGraveyard()
     // note: this can be called also when the player is alive
     // for example from WorldSession::HandleMovementOpcodes
 
+    if (sScriptMgr->OnPlayerRepopAtGraveyard(this))
+    {
+        m_deathTimer = 0;
+        return;
+    }
+
     AreaTableEntry const* zone = sAreaTableStore.LookupEntry(GetAreaId());
 
     bool shouldResurrect = false;
@@ -6273,7 +6279,7 @@ void Player::CheckAreaExplore()
 void Player::CheckOutdoorsAuraRequirements()
 {
     if (sWorld->getBoolConfig(CONFIG_VMAP_INDOOR_CHECK))
-        RemoveAurasWithAttribute(IsOutdoors() ? SPELL_ATTR0_INDOORS_ONLY : SPELL_ATTR0_OUTDOORS_ONLY);
+        RemoveAurasWithAttribute(sScriptMgr->OnPlayerCheckOutdoors(this, IsOutdoors()) ? SPELL_ATTR0_INDOORS_ONLY : SPELL_ATTR0_OUTDOORS_ONLY);
 }
 
 uint32 Player::TeamForRace(uint8 race)
@@ -6794,7 +6800,7 @@ void Player::UpdateArea(uint32 newArea)
 
     // previously this was in UpdateZone (but after UpdateArea) so nothing will break
     pvpInfo.IsInNoPvPArea = false;
-    if (area && area->IsSanctuary())    // in sanctuary
+    if (sScriptMgr->OnPlayerCheckSanctuary(this, area && area->IsSanctuary()))    // in sanctuary
     {
         SetPvpFlag(UNIT_BYTE2_FLAG_SANCTUARY);
         pvpInfo.IsInNoPvPArea = true;
@@ -9105,6 +9111,8 @@ void Player::SendInitWorldStates(uint32 zoneId, uint32 areaId)
         default:
             break;
     }
+
+    sScriptMgr->OnPlayerSendInitWorldStates(this, packet);
 
     SendDirectMessage(packet.Write());
     SendBGWeekendWorldStates();

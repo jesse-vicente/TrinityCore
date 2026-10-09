@@ -1,0 +1,55 @@
+###################################################################################################
+# HEART OF ACHERUS
+#
+#    Append this block to worldserver.conf (UTF-8 without BOM). Missing keys use the defaults below.
+#    Read at startup and on .reload config.
+#
+#    HeartOfAcherus.PlayersPerTeam
+#        Description: Maximum number of players of each faction in a match.
+#        Default:     10
+#
+#    HeartOfAcherus.MinPlayersPerTeam
+#        Description: Players of each faction waiting in the queue needed to start a match
+#                     (.acherus start ignores it). Cannot be above PlayersPerTeam.
+#        Default:     10
+#
+#    HeartOfAcherus.KillBonus
+#        Description: Points a faction gets for each kill of an enemy player during a match.
+#        Default:     10
+#
+#    HeartOfAcherus.MountMethod
+#        Description: How players mount inside the hall during a match. The client refuses mount
+#                     spells indoors on its own, so each method mounts the player another way.
+#                     Every method other than 0 needs the client UI match part and makes the hall
+#                     count as outdoors during a match (the real Acherus is not affected).
+#        Default:     0 - None (the hall stays indoors, mounts only outside it)
+#                     1 - Frame (a mount button on the screen, the server casts the Acherus
+#                         Deathcharger with its usual cast time)
+#
+#    HeartOfAcherus.ClientUI
+#        Description: Relabels the Eye of the Storm frames the mode borrows and adds its client UI,
+#                     through Lua sent with Warden (needs Warden.Enabled = 1, Windows 3.3.5a 12340).
+#        Default:     0 - Disabled
+#                     1 - Enabled
+#
+#    HeartOfAcherus.ClientLoginLuaFile
+#        Description: Path of client/hoa_login.lua, sent to every player on login.
+#                     Without it the client UI stays off.
+#        Default:     ""
+#
+#    HeartOfAcherus.ClientMatchLuaFile
+#        Description: Path of client/hoa_match.lua, sent to queued and in-match players.
+#                     Without it only the login part is applied.
+#        Default:     ""
+#
+
+HeartOfAcherus.PlayersPerTeam = 10
+HeartOfAcherus.MinPlayersPerTeam = 10
+HeartOfAcherus.KillBonus = 10
+HeartOfAcherus.MountMethod = 0
+HeartOfAcherus.ClientUI = 0
+HeartOfAcherus.ClientLoginLuaFile = ""
+HeartOfAcherus.ClientMatchLuaFile = ""
+
+#
+###################################################################################################
