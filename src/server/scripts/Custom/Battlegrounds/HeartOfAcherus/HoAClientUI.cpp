@@ -279,9 +279,10 @@ namespace HeartOfAcherus
             return;
 
         std::string const body = msg.substr(tab + 1);
-        if (auto command = _commands.find(body); command != _commands.end())
+        std::string::size_type const space = body.find(' ');
+        if (auto command = _commands.find(body.substr(0, space)); command != _commands.end())
         {
-            command->second(player);
+            command->second(player, space == std::string::npos ? std::string() : body.substr(space + 1));
             return;
         }
 

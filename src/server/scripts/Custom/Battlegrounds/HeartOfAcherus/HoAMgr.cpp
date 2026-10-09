@@ -29,6 +29,9 @@
 #include "ObjectAccessor.h"
 #include "Player.h"
 #include "SpellAuraEffects.h"
+#include "SpellInfo.h"
+#include "SpellMgr.h"
+#include "StringConvert.h"
 #include "StringFormat.h"
 #include "WorldSession.h"
 #include <algorithm>
@@ -92,11 +95,37 @@ namespace HeartOfAcherus
     Manager::Manager()
     {
         _clientUI.SetParticipantCheck([this](ObjectGuid guid) { return IsQueued(guid) || IsInMatch(guid); });
-        _clientUI.RegisterCommand("mount", [this](Player* player)
+        // "mount" (mount button) summons the Acherus Deathcharger, "mount <spell id>" (client hook) the player's own mount
+        _clientUI.RegisterCommand("mount", [this](Player* player, std::string const& args)
         {
-            if (_settings.Mount == MountMethod::Frame)
-                OnMountRequest(player);
+            if (_settings.OutdoorSpells == OutdoorSpellsMethod::None)
+                return;
+
+            if (args.empty())
+                OnMountRequest(player, Spells::AcherusDeathcharger);
+            else if (Optional<uint32> spellId = Trinity::StringTo<uint32>(args))
+                OnMountRequest(player, *spellId);
         });
+
+        _clientUI.RegisterCommand("dismount", [this](Player* player, std::string const& /*args*/)
+        {
+            if (_settings.OutdoorSpells != OutdoorSpellsMethod::None && player->IsMounted())
+                Dismount(player);
+        });
+
+        // "form! <id>" comes from "/cast !<name>", which casts an active form again instead of leaving it
+        for (bool keepActive : { false, true })
+        {
+            _clientUI.RegisterCommand(keepActive ? "form!" : "form", [this, keepActive](Player* player, std::string const& args)
+            {
+                if (_settings.OutdoorSpells == OutdoorSpellsMethod::None)
+                    return;
+
+                Optional<uint32> spellId = Trinity::StringTo<uint32>(args);
+                if (spellId == Spells::TravelForm || spellId == Spells::GhostWolf)
+                    OnFormRequest(player, *spellId, keepActive);
+            });
+        }
     }
 
     Manager* Manager::instance()
@@ -115,20 +144,20 @@ namespace HeartOfAcherus
             sConfigMgr->GetStringDefault("HeartOfAcherus.ClientLoginLuaFile", ""),
             sConfigMgr->GetStringDefault("HeartOfAcherus.ClientMatchLuaFile", "") });
 
-        uint32 const mountMethod = sConfigMgr->GetIntDefault("HeartOfAcherus.MountMethod", 0);
-        _settings.Mount = mountMethod < uint32(MountMethod::Max) ? MountMethod(mountMethod) : MountMethod::None;
-        if (mountMethod >= uint32(MountMethod::Max))
-            TC_LOG_ERROR("scripts", "HeartOfAcherus: unknown HeartOfAcherus.MountMethod {}, mounts disabled in the hall", mountMethod);
+        uint32 const outdoorSpellsMethod = sConfigMgr->GetIntDefault("HeartOfAcherus.OutdoorSpellsMethod", 0);
+        _settings.OutdoorSpells = outdoorSpellsMethod < uint32(OutdoorSpellsMethod::Max) ? OutdoorSpellsMethod(outdoorSpellsMethod) : OutdoorSpellsMethod::None;
+        if (outdoorSpellsMethod >= uint32(OutdoorSpellsMethod::Max))
+            TC_LOG_ERROR("scripts", "HeartOfAcherus: unknown HeartOfAcherus.OutdoorSpellsMethod {}, outdoor spells disabled in the hall", outdoorSpellsMethod);
 
         // every method so far has a client side, in the match part
-        if (_settings.Mount != MountMethod::None && !_clientUI.HasPart(PAYLOAD_MATCH))
+        if (_settings.OutdoorSpells != OutdoorSpellsMethod::None && !_clientUI.HasPart(PAYLOAD_MATCH))
         {
-            TC_LOG_ERROR("scripts", "HeartOfAcherus: HeartOfAcherus.MountMethod {} needs the client UI match part (HeartOfAcherus.ClientUI, HeartOfAcherus.ClientMatchLuaFile), mounts disabled in the hall", mountMethod);
-            _settings.Mount = MountMethod::None;
+            TC_LOG_ERROR("scripts", "HeartOfAcherus: HeartOfAcherus.OutdoorSpellsMethod {} needs the client UI match part (HeartOfAcherus.ClientUI, HeartOfAcherus.ClientMatchLuaFile), outdoor spells disabled in the hall", outdoorSpellsMethod);
+            _settings.OutdoorSpells = OutdoorSpellsMethod::None;
         }
 
         // read by the match part, sent again with it every time
-        _clientUI.PrependToPart(PAYLOAD_MATCH, Trinity::StringFormat("AcherusBG_MountMethod={}\n", uint32(_settings.Mount)));
+        _clientUI.PrependToPart(PAYLOAD_MATCH, Trinity::StringFormat("AcherusBG_OutdoorSpellsMethod={}\n", uint32(_settings.OutdoorSpells)));
     }
 
     // ----------------------------------------------------------------- world update
@@ -545,26 +574,35 @@ namespace HeartOfAcherus
         return match && match->AreHallRulesActive(player);
     }
 
-    // with a mount method the hall counts as outdoors during a match, like the battlegrounds; the real Acherus keeps
-    // its rule
+    // with an outdoor spells method the hall counts as outdoors during a match, like the battlegrounds; the real
+    // Acherus keeps its rule
     bool Manager::IsOutdoorsForced(Player const* player) const
     {
-        if (_settings.Mount == MountMethod::None)
+        if (_settings.OutdoorSpells == OutdoorSpellsMethod::None)
             return false;
 
         Match const* match = GetMatch(player->GetGUID());
         return match && match->AreHallRulesActive(player);
     }
 
-    // the client refuses mount spells indoors by itself, so the client UI mount button asks the server, which casts the
-    // Acherus Deathcharger with its cast time. The client ignores the results of a cast it did not start, so the usual
-    // refusals are checked here, with the client's own wording
-    void Manager::OnMountRequest(Player* player)
+    // the client refuses mount spells indoors by itself, so the client UI asks the server, which casts the mount with
+    // its cast time: the player's own one (a known spell with a mount aura), or the Acherus Deathcharger for the mount
+    // button and for the flying-only mounts, which have no ground speed. The client ignores the results of a cast it did
+    // not start, so the usual refusals are checked here, with the client's own wording. Dismounting is its own request,
+    // so a repeated click never mounts again right after
+    void Manager::OnMountRequest(Player* player, uint32 spellId)
     {
         if (player->IsMounted())
-        {
-            Dismount(player);
             return;
+
+        if (spellId != Spells::AcherusDeathcharger)
+        {
+            SpellInfo const* spellInfo = sSpellMgr->GetSpellInfo(spellId);
+            if (!spellInfo || !player->HasSpell(spellId) || !spellInfo->HasAura(SPELL_AURA_MOUNTED))
+                return;
+
+            if (spellInfo->HasAura(SPELL_AURA_MOD_INCREASE_MOUNTED_FLIGHT_SPEED) && !spellInfo->HasAura(SPELL_AURA_MOD_INCREASE_MOUNTED_SPEED))
+                spellId = Spells::AcherusDeathcharger;
         }
 
         Match const* match = GetMatch(player->GetGUID());
@@ -583,7 +621,68 @@ namespace HeartOfAcherus
         else if (player->IsNonMeleeSpellCast(false))
             _clientUI.ShowError(player, "Another action is in progress.");
         else
-            player->CastSpell(player, Spells::AcherusDeathcharger, false);
+            CastForClientUI(player, spellId);
+    }
+
+    // Travel Form and Ghost Wolf are outdoors only, refused by the client in the hall like the mounts: the client hook
+    // asks for them after that refusal. A rune carrier may use them. The cast goes through the usual checks; its
+    // result is shown here, as for the mount
+    void Manager::OnFormRequest(Player* player, uint32 spellId, bool keepActive)
+    {
+        if (!player->HasSpell(spellId))
+            return;
+
+        if (!keepActive && player->HasAura(spellId))
+        {
+            player->RemoveAurasDueToSpell(spellId);
+            return;
+        }
+
+        if (!IsOutdoorsForced(player))
+        {
+            _clientUI.ShowError(player, "You can only use that here during the battle.");
+            return;
+        }
+
+        // both are SPELL_ATTR0_NOT_SHAPESHIFT: the client leaves the current form (cat, bear, or the same one with "!")
+        // before casting such a spell, the server cast has to do it too or SpellInfo::CheckShapeshift refuses it
+        if (player->GetShapeshiftForm() != FORM_NONE)
+            player->RemoveAurasByType(SPELL_AURA_MOD_SHAPESHIFT);
+
+        CastForClientUI(player, spellId);
+    }
+
+    // a cast the server starts for the client UI: the client ignores its result and does not start its own global
+    // cooldown, so both are done here, with the client's wording
+    void Manager::CastForClientUI(Player* player, uint32 spellId)
+    {
+        switch (player->CastSpell(player, spellId, false))
+        {
+            case SPELL_CAST_OK:
+                StartClientGlobalCooldown(player, spellId);
+                break;
+            case SPELL_FAILED_CASTER_DEAD:
+                _clientUI.ShowError(player, "You are dead.");
+                break;
+            case SPELL_FAILED_MOVING:
+                _clientUI.ShowError(player, "Can't do that while moving.");
+                break;
+            case SPELL_FAILED_NOT_READY:
+                _clientUI.ShowError(player, "Spell is not ready yet.");
+                break;
+            case SPELL_FAILED_NO_POWER:
+                _clientUI.ShowError(player, "Not enough mana.");
+                break;
+            case SPELL_FAILED_SPELL_IN_PROGRESS:
+                _clientUI.ShowError(player, "Another action is in progress.");
+                break;
+            case SPELL_FAILED_AFFECTING_COMBAT:
+                _clientUI.ShowError(player, "You are in combat.");
+                break;
+            default:
+                _clientUI.ShowError(player, "You can't do that right now.");
+                break;
+        }
     }
 
     bool Manager::OnRepop(Player* player)

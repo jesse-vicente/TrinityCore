@@ -60,6 +60,7 @@ namespace HeartOfAcherus
 
     Aura* ApplyPermanentAura(Unit* unit, uint32 spellId);           // 0 = none
     void Dismount(Player* player);
+    void StartClientGlobalCooldown(Player* player, uint32 spellId); // for casts the server starts for the client UI
     void Revive(Player* player);
     bool IsInHall(Player const* player);                            // in the world, on the Acherus map
 }

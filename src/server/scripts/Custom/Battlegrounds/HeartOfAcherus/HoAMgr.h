@@ -50,7 +50,7 @@ namespace HeartOfAcherus
         uint32 PlayersPerTeam = 10;
         uint32 MinPlayersPerTeam = 10;
         uint32 KillBonus = 10;
-        MountMethod Mount = MountMethod::None;
+        OutdoorSpellsMethod OutdoorSpells = OutdoorSpellsMethod::None;
     };
 
     // Entry point of the module: queue, matchmaking, players entering and leaving matches, and the script hooks.
@@ -123,7 +123,9 @@ namespace HeartOfAcherus
         void TryCreateMatch();
         void RemoveFinishedMatches();
         void AddPlayer(Match& match, Player* player);
-        void OnMountRequest(Player* player);
+        void OnMountRequest(Player* player, uint32 spellId);
+        void OnFormRequest(Player* player, uint32 spellId, bool keepActive);
+        void CastForClientUI(Player* player, uint32 spellId);
         void SendQueueStatus(Player* player);
         void ClearQueueStatus(ObjectGuid guid, Player* player);
         RuneState const* GetCarriedRuneState(ObjectGuid guid) const;

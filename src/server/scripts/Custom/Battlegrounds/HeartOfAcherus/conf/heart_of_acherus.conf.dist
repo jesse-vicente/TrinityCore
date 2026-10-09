@@ -17,14 +17,18 @@
 #        Description: Points a faction gets for each kill of an enemy player during a match.
 #        Default:     10
 #
-#    HeartOfAcherus.MountMethod
-#        Description: How players mount inside the hall during a match. The client refuses mount
-#                     spells indoors on its own, so each method mounts the player another way.
-#                     Every method other than 0 needs the client UI match part and makes the hall
-#                     count as outdoors during a match (the real Acherus is not affected).
-#        Default:     0 - None (the hall stays indoors, mounts only outside it)
-#                     1 - Frame (a mount button on the screen, the server casts the Acherus
-#                         Deathcharger with its usual cast time)
+#    HeartOfAcherus.OutdoorSpellsMethod
+#        Description: How players use outdoor-only spells (mounts, Travel Form, Ghost Wolf) inside
+#                     the hall during a match. The client refuses them indoors on its own, so each
+#                     method gets them to the server another way. Every method other than 0 needs
+#                     the client UI match part and makes the hall count as outdoors during a match
+#                     (the real Acherus is not affected).
+#        Default:     0 - None (the hall stays indoors, these spells only outside it)
+#                     1 - MountButton (a mount button on the screen that summons the Acherus
+#                         Deathcharger; Travel Form and Ghost Wolf through the client hook)
+#                     2 - ClientHook (the usual buttons, keys and macros, the client asks the
+#                         server to cast the spell; mounts are the player's own, flying-only
+#                         ones become the Acherus Deathcharger)
 #
 #    HeartOfAcherus.ClientUI
 #        Description: Relabels the Eye of the Storm frames the mode borrows and adds its client UI,
@@ -46,7 +50,7 @@
 HeartOfAcherus.PlayersPerTeam = 10
 HeartOfAcherus.MinPlayersPerTeam = 10
 HeartOfAcherus.KillBonus = 10
-HeartOfAcherus.MountMethod = 0
+HeartOfAcherus.OutdoorSpellsMethod = 0
 HeartOfAcherus.ClientUI = 0
 HeartOfAcherus.ClientLoginLuaFile = ""
 HeartOfAcherus.ClientMatchLuaFile = ""

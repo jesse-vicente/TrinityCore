@@ -46,7 +46,7 @@ namespace HeartOfAcherus
     class ClientUI
     {
     public:
-        using CommandHandler = std::function<void(Player*)>;
+        using CommandHandler = std::function<void(Player*, std::string const& args)>;
         using ParticipantCheck = std::function<bool(ObjectGuid)>;
 
         void Load(bool enabled, std::array<std::string, PAYLOAD_PART_COUNT> const& files);
@@ -54,7 +54,7 @@ namespace HeartOfAcherus
         bool HasPart(PayloadPart part) const { return _enabled && !_scripts[part].empty(); }
         void PrependToPart(PayloadPart part, std::string const& text);
 
-        // client message bodies handled outside of the UI, e.g. "mount"
+        // client message bodies handled outside of the UI: "<name>" or "<name> <args>", e.g. "mount 23221"
         void RegisterCommand(std::string const& body, CommandHandler handler);
         // queued or in a match: gets the match part and the relabel
         void SetParticipantCheck(ParticipantCheck check) { _isParticipant = std::move(check); }
