@@ -27,6 +27,8 @@
 #include "MiscPackets.h"
 #include "ObjectAccessor.h"
 #include "Player.h"
+#include "SpellAuraEffects.h"
+#include "SpellAuras.h"
 #include "StringFormat.h"
 #include "WorldSession.h"
 #include <algorithm>
@@ -37,6 +39,7 @@ namespace HeartOfAcherus
     namespace
     {
         constexpr float HonorableKillRange = 40.0f;
+        constexpr int32 SafeFallHeight = 99999;                     // as Parachute (68298), "Immune to falling damage."
 
         char const* TeamName(TeamId team)
         {
@@ -124,6 +127,13 @@ namespace HeartOfAcherus
                 else if (oldTimer > 30 * IN_MILLISECONDS && _statusTimer <= 30 * IN_MILLISECONDS)
                     Announce(CHAT_MSG_BG_SYSTEM_NEUTRAL, "The battle for the Heart of Acherus begins in 30 seconds. Prepare yourselves!");
 
+                _powerResetTimer += diff;
+                if (_powerResetTimer > Timers::PreparationPowerReset)
+                {
+                    _powerResetTimer = 0;
+                    ResetPowers();
+                }
+
                 if (!_statusTimer)
                     StartBattle();
                 break;
@@ -191,10 +201,19 @@ namespace HeartOfAcherus
 
         UpdateWorldStates();
 
-        // the score frame timers switch from the preparation to the battle
+        // as Battleground::_ProcessJoin when the doors open: Preparation goes, health and power are reset; the score
+        // frame timers switch from the preparation to the battle
         for (auto& [guid, matchPlayer] : _players)
-            if (Player* player = ObjectAccessor::FindConnectedPlayer(guid))
-                SendBattlefieldStatus(matchPlayer, player);
+        {
+            Player* player = ObjectAccessor::FindConnectedPlayer(guid);
+            if (!player)
+                continue;
+
+            player->RemoveAurasDueToSpell(Spells::Preparation);
+            if (IsInHall(player))
+                player->ResetAllPowers();
+            SendBattlefieldStatus(matchPlayer, player);
+        }
 
         Announce(CHAT_MSG_BG_SYSTEM_NEUTRAL, "The battle for the Heart of Acherus has begun! Claim the runes at the runeforges!");
         PlaySound(Sounds::BattleStart);
@@ -322,6 +341,15 @@ namespace HeartOfAcherus
         _raids.RemoveOutsiders();
     }
 
+    // Battleground::_ProcessJoin: full health and mana (rage and runic power emptied) every 5 s until the battle begins
+    void Match::ResetPowers()
+    {
+        for (auto const& [guid, matchPlayer] : _players)
+            if (Player* player = ObjectAccessor::FindConnectedPlayer(guid))
+                if (IsInHall(player))
+                    player->ResetAllPowers();
+    }
+
     // ----------------------------------------------------------------- score
 
     void Match::ScoreTick()
@@ -410,6 +438,22 @@ namespace HeartOfAcherus
 
         // spell_area gives it back on area changes; in a match players ride their mounts instead
         player->RemoveAurasDueToSpell(Spells::DominionOverAcherus);
+
+        // Battleground::AddPlayer casts it while the battle has not begun; its area check (SpellInfo::CheckLocation) only
+        // allows battleground maps, so it is added and put back here after Player::UpdateAreaDependentAuras removes it
+        if (_status == MatchStatus::Preparation)
+        {
+            if (player->IsAlive() && !player->HasAura(Spells::Preparation))
+                ApplyPermanentAura(player, Spells::Preparation);
+        }
+        else
+            player->RemoveAurasDueToSpell(Spells::Preparation);
+
+        // no fall damage in the hall: the safe fall height is far above any fall
+        if (!player->HasAura(Spells::SafeFall))
+            if (Aura* aura = ApplyPermanentAura(player, Spells::SafeFall))
+                if (AuraEffect* effect = aura->GetEffect(EFFECT_0))
+                    effect->ChangeAmount(SafeFallHeight);
 
         // the whole map is a sanctuary (AreaTableEntry::IsSanctuary), also for who was already in Acherus
         if (AreHallRulesActive(player) && player->IsInSanctuary())

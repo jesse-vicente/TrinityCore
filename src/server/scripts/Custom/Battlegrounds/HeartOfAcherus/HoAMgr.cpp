@@ -69,6 +69,8 @@ namespace HeartOfAcherus
             RestorePhase(player);
             player->RemoveAurasDueToSpell(Spells::DominionOverAcherus);
             player->RemoveAurasDueToSpell(Spells::AcherusDeathcharger);
+            player->RemoveAurasDueToSpell(Spells::Preparation);
+            player->RemoveAurasDueToSpell(Spells::SafeFall);
         }
 
         void SaveReturnPosition(Player const* player)
