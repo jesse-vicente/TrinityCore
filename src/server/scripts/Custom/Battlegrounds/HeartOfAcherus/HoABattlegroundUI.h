@@ -58,7 +58,7 @@ namespace HeartOfAcherus::BattlegroundUI
     void SendStatusActive(Player* player, uint32 slot, uint32 instanceId, uint32 shutdownTimer, uint32 startTimer, TeamId team);
     void SendStatusQueued(Player* player, uint32 slot);
     void SendStatusFailed(Player* player, GroupJoinBattlegroundResult result);
-    void SendStatusConfirm(Player* player, uint32 slot, uint32 instanceId, uint32 mapId, uint32 timeout);
+    void SendStatusConfirm(Player* player, uint32 slot, uint32 mapId, uint32 timeout);
     void SendStatusNone(Player* player, uint32 slot);
 }
 
