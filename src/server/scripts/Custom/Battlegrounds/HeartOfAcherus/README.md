@@ -122,7 +122,7 @@ Todos são `ScriptMgr` opt-in, sem efeito quando nenhum script os usa. O core n�
 |---|---|---|
 | `OnSendInitWorldStates` | `Player::SendInitWorldStates`, antes do envio | trocar mapa/zona do pacote pelos do Eye of the Storm e mostrar o placar |
 | `OnLeaveBattlefield` | `HandleBattlefieldLeaveOpcode` | botão "Leave Battleground" do placar final |
-| `OnJoinBattlegroundQueue` | `HandleBattlemasterJoinOpcode`/`HandleBattlemasterJoinArena` | recusar entrar numa fila real (`bool& allowed`) enquanto na fila ou numa partida do Acherus |
+| `OnJoinBattlegroundQueue` | `HandleBattlemasterJoinOpcode`/`HandleBattlemasterJoinArena` | recusar entrar numa fila real (`bool& allowed` + `reason`) enquanto na fila/partida do Acherus |
 | `OnCheckSanctuary` | `Player::UpdateArea` | o mapa 609 inteiro é santuário (`AreaTableEntry::IsSanctuary`), o que impede PvP |
 | `OnCheckOutdoors` | `Spell::CheckCast` e `Player::CheckAreaExplore` | o salão conta como ambiente aberto na partida, para montar |
 | `OnRepopAtGraveyard` | início de `Player::RepopAtGraveyard` | mandar o fantasma ao cemitério do time, e não ao dos DKs |
@@ -223,7 +223,8 @@ Bloco documentado em [`conf/heart_of_acherus.conf.dist`](conf/heart_of_acherus.c
 ## Comandos
 
 `.acherus join` usa `RBAC_PERM_JOIN_NORMAL_BG` (todo jogador tem), porque é o "Join" da janela PvP; `.acherus queue` e
-os demais usam `RBAC_PERM_COMMAND_DEBUG`.
+os demais usam `RBAC_PERM_COMMAND_DEBUG`. Os erros de fila do `.acherus join` vão para o frame de erro do cliente
+(`BattlefieldStatusFailed`, como as BGs nativas), nunca para o chat; o sucesso é silencioso.
 
 | Comando | Efeito |
 |---|---|

@@ -179,9 +179,15 @@ void WorldSession::HandleBattlemasterJoinOpcode(WorldPackets::Battleground::Batt
             return;
 
         bool allowed = true;
-        sScriptMgr->OnPlayerJoinBattlegroundQueue(_player, allowed);
+        GroupJoinBattlegroundResult reason = ERR_BATTLEGROUND_JOIN_FAILED;
+        sScriptMgr->OnPlayerJoinBattlegroundQueue(_player, allowed, reason);
         if (!allowed)
+        {
+            WorldPackets::Battleground::BattlefieldStatusFailed battlefieldStatus;
+            BattlegroundMgr::BuildBattlegroundStatusFailed(&battlefieldStatus, reason);
+            SendPacket(battlefieldStatus.Write());
             return;
+        }
 
         BattlegroundQueue& bgQueue = sBattlegroundMgr->GetBattlegroundQueue(bgQueueTypeId);
         GroupQueueInfo* ginfo = bgQueue.AddGroup(_player, nullptr, bracketEntry, false, isPremade, 0, 0);
@@ -211,7 +217,8 @@ void WorldSession::HandleBattlemasterJoinOpcode(WorldPackets::Battleground::Batt
                 continue;
 
             bool allowed = true;
-            sScriptMgr->OnPlayerJoinBattlegroundQueue(member, allowed);
+            GroupJoinBattlegroundResult reason = ERR_BATTLEGROUND_JOIN_FAILED;
+            sScriptMgr->OnPlayerJoinBattlegroundQueue(member, allowed, reason);
             if (allowed)
                 continue;
 
@@ -220,7 +227,7 @@ void WorldSession::HandleBattlemasterJoinOpcode(WorldPackets::Battleground::Batt
                 if (Player* otherMember = other->GetSource())
                 {
                     WorldPackets::Battleground::BattlefieldStatusFailed battlefieldStatus;
-                    BattlegroundMgr::BuildBattlegroundStatusFailed(&battlefieldStatus, ERR_BATTLEGROUND_JOIN_FAILED, &memberGuid);
+                    BattlegroundMgr::BuildBattlegroundStatusFailed(&battlefieldStatus, reason, &memberGuid);
                     otherMember->SendDirectMessage(battlefieldStatus.Write());
                 }
             return;
@@ -669,7 +676,8 @@ void WorldSession::HandleBattlemasterJoinArena(WorldPackets::Battleground::Battl
                 continue;
 
             bool allowed = true;
-            sScriptMgr->OnPlayerJoinBattlegroundQueue(member, allowed);
+            GroupJoinBattlegroundResult reason = ERR_BATTLEGROUND_JOIN_FAILED;
+            sScriptMgr->OnPlayerJoinBattlegroundQueue(member, allowed, reason);
             if (allowed)
                 continue;
 
@@ -678,7 +686,7 @@ void WorldSession::HandleBattlemasterJoinArena(WorldPackets::Battleground::Battl
                 if (Player* otherMember = other->GetSource())
                 {
                     WorldPackets::Battleground::BattlefieldStatusFailed battlefieldStatus;
-                    BattlegroundMgr::BuildBattlegroundStatusFailed(&battlefieldStatus, ERR_BATTLEGROUND_JOIN_FAILED, &memberGuid);
+                    BattlegroundMgr::BuildBattlegroundStatusFailed(&battlefieldStatus, reason, &memberGuid);
                     otherMember->SendDirectMessage(battlefieldStatus.Write());
                 }
             return;
@@ -743,9 +751,15 @@ void WorldSession::HandleBattlemasterJoinArena(WorldPackets::Battleground::Battl
     else
     {
         bool allowed = true;
-        sScriptMgr->OnPlayerJoinBattlegroundQueue(_player, allowed);
+        GroupJoinBattlegroundResult reason = ERR_BATTLEGROUND_JOIN_FAILED;
+        sScriptMgr->OnPlayerJoinBattlegroundQueue(_player, allowed, reason);
         if (!allowed)
+        {
+            WorldPackets::Battleground::BattlefieldStatusFailed battlefieldStatus;
+            BattlegroundMgr::BuildBattlegroundStatusFailed(&battlefieldStatus, reason);
+            SendPacket(battlefieldStatus.Write());
             return;
+        }
 
         GroupQueueInfo* ginfo = bgQueue.AddGroup(_player, nullptr, bracketEntry, packet.IsRated, false, arenaRating, matchmakerRating, ateamId, previousOpponents);
         uint32 avgTime = bgQueue.GetAverageQueueWaitTime(ginfo);

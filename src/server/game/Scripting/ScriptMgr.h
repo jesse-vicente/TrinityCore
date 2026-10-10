@@ -728,8 +728,9 @@ class TC_GAME_API PlayerScript : public ScriptObject
         // Called when a player requests to leave a battlefield (e.g. "Leave Battleground" button)
         virtual void OnLeaveBattlefield(Player* player);
 
-        // Called right before a player is added to a battleground or arena queue; set allowed to false to refuse it
-        virtual void OnJoinBattlegroundQueue(Player* player, bool& allowed);
+        // Called right before a player is added to a battleground or arena queue; set allowed to false to refuse it,
+        // with reason shown by the client (a GroupJoinBattlegroundResult)
+        virtual void OnJoinBattlegroundQueue(Player* player, bool& allowed, GroupJoinBattlegroundResult& reason);
 
         // Called when the sanctuary state of the player's area is checked, set isSanctuary to override it
         virtual void OnCheckSanctuary(Player* player, bool& isSanctuary);
@@ -1081,7 +1082,7 @@ class TC_GAME_API ScriptMgr
         void OnPlayerRepop(Player* player);
         void OnPlayerSendInitWorldStates(Player* player, WorldPackets::WorldState::InitWorldStates& packet);
         void OnPlayerLeaveBattlefield(Player* player);
-        void OnPlayerJoinBattlegroundQueue(Player* player, bool& allowed);
+        void OnPlayerJoinBattlegroundQueue(Player* player, bool& allowed, GroupJoinBattlegroundResult& reason);
         bool OnPlayerCheckSanctuary(Player* player, bool isSanctuary);
         bool OnPlayerCheckOutdoors(Player* player, bool isOutdoors);
         bool OnPlayerRepopAtGraveyard(Player* player);

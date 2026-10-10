@@ -68,8 +68,8 @@ namespace HeartOfAcherus
         ClientUI& GetClientUI() { return _clientUI; }
 
         // queue
-        bool Enqueue(Player* player, std::string& error, ObjectGuid group = {});
-        bool EnqueueGroup(Player* leader, std::string& error);      // the whole party/raid, kept in the same match
+        bool Enqueue(Player* player, std::string& error, GroupJoinBattlegroundResult& reason, ObjectGuid group = {});
+        bool EnqueueGroup(Player* leader, std::string& error, GroupJoinBattlegroundResult& reason); // whole party/raid, same match
         bool Dequeue(ObjectGuid guid);
         bool IsQueued(ObjectGuid guid) const { return _queue.Contains(guid); }
         std::array<std::size_t, PVP_TEAMS_COUNT> GetQueueSizes() const { return _queue.GetSizes(); }
@@ -125,7 +125,7 @@ namespace HeartOfAcherus
         void TryCreateMatch();
         void RemoveFinishedMatches();
         void AddPlayer(Match& match, Player* player);
-        bool CanEnqueue(Player* player, std::string& error) const;   // the Enqueue rules, without side effects
+        bool CanEnqueue(Player* player, std::string& error, GroupJoinBattlegroundResult& reason) const; // Enqueue rules, no side effects
         void OnMountRequest(Player* player, uint32 spellId);
         void OnFormRequest(Player* player, uint32 spellId, bool keepActive);
         void CastForClientUI(Player* player, uint32 spellId);

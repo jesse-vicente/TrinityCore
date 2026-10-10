@@ -16,6 +16,7 @@
  */
 
 #include "HoAMgr.h"
+#include "HoABattlegroundUI.h"
 #include "Chat.h"
 #include "ChatCommand.h"
 #include "Player.h"
@@ -51,7 +52,8 @@ public:
     }
 
     // the PvP frame "Join" sends it; it always queues the player himself (never toggles, never the selected target).
-    // With "group" it queues the whole party/raid, which then enters the same match
+    // With "group" it queues the whole party/raid, which then enters the same match. Errors go to the client's error
+    // frame as a BattlefieldStatusFailed (never to chat); a success is silent (the queue UI shows it)
     static bool HandleJoinCommand(ChatHandler* handler, char const* args)
     {
         Player* player = handler->GetPlayer();
@@ -62,17 +64,14 @@ public:
         while (!mode.empty() && mode.front() == ' ')
             mode.remove_prefix(1);
 
+        GroupJoinBattlegroundResult reason = ERR_BATTLEGROUND_JOIN_FAILED;
+        std::string error;
+
         if (mode == "group")
         {
-            std::string error;
-            if (!sHeartOfAcherusMgr->EnqueueGroup(player, error))
-            {
-                handler->SendSysMessage(error.empty() ? "Cannot queue your group for the Heart of Acherus." : error);
-                handler->SetSentErrorMessage(true);
-                return false;
-            }
+            if (!sHeartOfAcherusMgr->EnqueueGroup(player, error, reason))
+                HeartOfAcherus::BattlegroundUI::SendStatusFailed(player, reason);
 
-            handler->SendSysMessage("Your group is now queued for the battle for the Heart of Acherus.");
             return true;
         }
 
@@ -80,15 +79,9 @@ public:
         if (sHeartOfAcherusMgr->IsQueued(player->GetGUID()))
             return true;
 
-        std::string error;
-        if (!sHeartOfAcherusMgr->Enqueue(player, error))
-        {
-            handler->SendSysMessage(error.empty() ? "Cannot queue for the Heart of Acherus." : error);
-            handler->SetSentErrorMessage(true);
-            return false;
-        }
+        if (!sHeartOfAcherusMgr->Enqueue(player, error, reason))
+            HeartOfAcherus::BattlegroundUI::SendStatusFailed(player, reason);
 
-        handler->SendSysMessage("You are now queued for the battle for the Heart of Acherus.");
         return true;
     }
 
@@ -112,7 +105,8 @@ public:
             return true;
 
         std::string error;
-        if (!sHeartOfAcherusMgr->Enqueue(player, error))
+        GroupJoinBattlegroundResult reason = ERR_BATTLEGROUND_JOIN_FAILED;
+        if (!sHeartOfAcherusMgr->Enqueue(player, error, reason))
         {
             handler->SendSysMessage(error.empty() ? "Cannot queue this player." : error);
             handler->SetSentErrorMessage(true);

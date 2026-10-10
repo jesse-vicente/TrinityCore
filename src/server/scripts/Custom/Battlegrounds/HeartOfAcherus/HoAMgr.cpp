@@ -360,24 +360,28 @@ namespace HeartOfAcherus
 
     // ----------------------------------------------------------------- queue
 
-    // the rules for entering the queue, without side effects; also used to validate a whole group before queueing any
-    bool Manager::CanEnqueue(Player* player, std::string& error) const
+    // the rules for entering the queue, without side effects; also used to validate a whole group before queueing any.
+    // reason is the client-visible error (a GroupJoinBattlegroundResult shown in the client's error frame)
+    bool Manager::CanEnqueue(Player* player, std::string& error, GroupJoinBattlegroundResult& reason) const
     {
         if (IsInMatch(player->GetGUID()))
         {
             error = "You are already in the battle for the Heart of Acherus.";
+            reason = ERR_BATTLEGROUND_NOT_IN_BATTLEGROUND;
             return false;
         }
 
         if (IsQueued(player->GetGUID()))
         {
             error = "You are already queued for the battle for the Heart of Acherus.";
+            reason = ERR_BATTLEGROUND_TOO_MANY_QUEUES;
             return false;
         }
 
         if (player->InBattleground() || player->InArena())
         {
             error = "You cannot queue while in a battleground or arena.";
+            reason = ERR_BATTLEGROUND_NOT_IN_BATTLEGROUND;
             return false;
         }
 
@@ -385,12 +389,14 @@ namespace HeartOfAcherus
         if (player->InBattlegroundQueue())
         {
             error = "You cannot queue while in a battleground or arena queue.";
+            reason = ERR_BATTLEGROUND_TOO_MANY_QUEUES;
             return false;
         }
 
         if (player->GetLevel() < RequiredLevel)
         {
             error = Trinity::StringFormat("You must be level {} to join the battle for the Heart of Acherus.", RequiredLevel);
+            reason = ERR_BATTLEGROUND_JOIN_RANGE_INDEX;
             return false;
         }
 
@@ -398,20 +404,22 @@ namespace HeartOfAcherus
         if (team != TEAM_ALLIANCE && team != TEAM_HORDE)
         {
             error = "Your team cannot join the Heart of Acherus.";
+            reason = ERR_BATTLEGROUND_JOIN_FAILED;
             return false;
         }
 
         return true;
     }
 
-    bool Manager::Enqueue(Player* player, std::string& error, ObjectGuid group)
+    bool Manager::Enqueue(Player* player, std::string& error, GroupJoinBattlegroundResult& reason, ObjectGuid group)
     {
-        if (!CanEnqueue(player, error))
+        if (!CanEnqueue(player, error, reason))
             return false;
 
         if (!_queue.Add(player->GetGUID(), player->GetTeamId(), group))
         {
             error = "You are already queued for the battle for the Heart of Acherus.";
+            reason = ERR_BATTLEGROUND_TOO_MANY_QUEUES;
             return false;
         }
 
@@ -422,8 +430,10 @@ namespace HeartOfAcherus
 
     // queues the whole party/raid under the leader, so the group is taken into the same match; already queued members
     // are skipped, and a group bigger than a team is refused
-    bool Manager::EnqueueGroup(Player* leader, std::string& error)
+    bool Manager::EnqueueGroup(Player* leader, std::string& error, GroupJoinBattlegroundResult& reason)
     {
+        reason = ERR_BATTLEGROUND_JOIN_FAILED;
+
         Group* group = leader->GetGroup();
         if (!group)
         {
@@ -455,8 +465,9 @@ namespace HeartOfAcherus
             if (!member)
                 continue;
 
+            GroupJoinBattlegroundResult memberReason = ERR_BATTLEGROUND_JOIN_FAILED;
             std::string memberError;
-            if (!CanEnqueue(member, memberError))
+            if (!CanEnqueue(member, memberError, memberReason))
             {
                 error = Trinity::StringFormat("{} cannot queue: {}", member->GetName(), memberError);
                 return false;
@@ -466,8 +477,9 @@ namespace HeartOfAcherus
         for (GroupReference* itr = group->GetFirstMember(); itr; itr = itr->next())
             if (Player* member = itr->GetSource())
             {
+                GroupJoinBattlegroundResult memberReason = ERR_BATTLEGROUND_JOIN_FAILED;
                 std::string memberError;
-                Enqueue(member, memberError, leader->GetGUID());
+                Enqueue(member, memberError, memberReason, leader->GetGUID());
             }
 
         return true;
@@ -776,13 +788,10 @@ namespace HeartOfAcherus
     }
 
     // the PvP queues exclude the Acherus one: while queued or in a match the player cannot join a real battleground
+    // (the OnJoinBattlegroundQueue hook sends the client error, a GroupJoinBattlegroundResult)
     bool Manager::CanJoinRealBattlegroundQueue(Player* player)
     {
-        if (!IsQueued(player->GetGUID()) && !IsInMatch(player->GetGUID()))
-            return true;
-
-        ChatHandler(player->GetSession()).SendSysMessage("You cannot join a battleground or arena while queued for the Heart of Acherus.");
-        return false;
+        return !IsQueued(player->GetGUID()) && !IsInMatch(player->GetGUID());
     }
 
     // before the player is saved, so the rune auras are never stored
@@ -888,9 +897,7 @@ namespace HeartOfAcherus
         if (player->GetBattlegroundQueueIndex(queueTypeId) < PLAYER_MAX_BATTLEGROUND_QUEUES)
             return false;
 
-        if (Dequeue(player->GetGUID()))
-            ChatHandler(player->GetSession()).SendSysMessage("You left the queue for the battle for the Heart of Acherus.");
-
+        Dequeue(player->GetGUID());
         return true;
     }
 
