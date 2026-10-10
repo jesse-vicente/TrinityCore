@@ -29,7 +29,7 @@ namespace HeartOfAcherus
     {
         bool IsEligibleForMatch(Player const* player)
         {
-            return player->IsInWorld() && player->IsAlive() && !player->IsInCombat() && !player->IsInFlight()
+            return player->IsInWorld() && player->IsAlive() && !player->IsInFlight()
                 && !player->IsBeingTeleported() && !player->InBattleground() && !player->InArena()
                 && !player->InBattlegroundQueue() && !player->GetMap()->Instanceable();
         }

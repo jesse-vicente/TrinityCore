@@ -178,7 +178,10 @@ void WorldSession::HandleBattlemasterJoinOpcode(WorldPackets::Battleground::Batt
         if (_player->HasAura(9454))
             return;
 
-        sScriptMgr->OnPlayerJoinBattlegroundQueue(_player);
+        bool allowed = true;
+        sScriptMgr->OnPlayerJoinBattlegroundQueue(_player, allowed);
+        if (!allowed)
+            return;
 
         BattlegroundQueue& bgQueue = sBattlegroundMgr->GetBattlegroundQueue(bgQueueTypeId);
         GroupQueueInfo* ginfo = bgQueue.AddGroup(_player, nullptr, bracketEntry, false, isPremade, 0, 0);
@@ -199,6 +202,29 @@ void WorldSession::HandleBattlemasterJoinOpcode(WorldPackets::Battleground::Batt
             return;
         if (grp->GetLeaderGUID() != _player->GetGUID())
             return;
+
+        // a script may refuse a member; the whole group then stays out
+        for (GroupReference const* itr = grp->GetFirstMember(); itr != nullptr; itr = itr->next())
+        {
+            Player* member = itr->GetSource();
+            if (!member)
+                continue;
+
+            bool allowed = true;
+            sScriptMgr->OnPlayerJoinBattlegroundQueue(member, allowed);
+            if (allowed)
+                continue;
+
+            ObjectGuid const memberGuid = member->GetGUID();
+            for (GroupReference const* other = grp->GetFirstMember(); other != nullptr; other = other->next())
+                if (Player* otherMember = other->GetSource())
+                {
+                    WorldPackets::Battleground::BattlefieldStatusFailed battlefieldStatus;
+                    BattlegroundMgr::BuildBattlegroundStatusFailed(&battlefieldStatus, ERR_BATTLEGROUND_JOIN_FAILED, &memberGuid);
+                    otherMember->SendDirectMessage(battlefieldStatus.Write());
+                }
+            return;
+        }
 
         ObjectGuid errorGuid;
         err = grp->CanJoinBattlegroundQueue(bg, bgQueueTypeId, 0, bg->GetMaxPlayersPerTeam(), false, 0, errorGuid);
@@ -230,7 +256,6 @@ void WorldSession::HandleBattlemasterJoinOpcode(WorldPackets::Battleground::Batt
             }
 
             // add to queue
-            sScriptMgr->OnPlayerJoinBattlegroundQueue(member);
             uint32 queueSlot = member->AddBattlegroundQueueId(bgQueueTypeId);
 
             WorldPackets::Battleground::BattlefieldStatusQueued battlefieldStatus;
@@ -636,6 +661,29 @@ void WorldSession::HandleBattlemasterJoinArena(WorldPackets::Battleground::Battl
     BattlegroundQueue& bgQueue = sBattlegroundMgr->GetBattlegroundQueue(bgQueueTypeId);
     if (packet.JoinAsGroup)
     {
+        // a script may refuse a member; the whole group then stays out
+        for (GroupReference const* itr = grp->GetFirstMember(); itr != nullptr; itr = itr->next())
+        {
+            Player* member = itr->GetSource();
+            if (!member)
+                continue;
+
+            bool allowed = true;
+            sScriptMgr->OnPlayerJoinBattlegroundQueue(member, allowed);
+            if (allowed)
+                continue;
+
+            ObjectGuid const memberGuid = member->GetGUID();
+            for (GroupReference const* other = grp->GetFirstMember(); other != nullptr; other = other->next())
+                if (Player* otherMember = other->GetSource())
+                {
+                    WorldPackets::Battleground::BattlefieldStatusFailed battlefieldStatus;
+                    BattlegroundMgr::BuildBattlegroundStatusFailed(&battlefieldStatus, ERR_BATTLEGROUND_JOIN_FAILED, &memberGuid);
+                    otherMember->SendDirectMessage(battlefieldStatus.Write());
+                }
+            return;
+        }
+
         uint32 avgTime = 0;
         GroupQueueInfo* ginfo = nullptr;
 
@@ -655,7 +703,7 @@ void WorldSession::HandleBattlemasterJoinArena(WorldPackets::Battleground::Battl
             avgTime = bgQueue.GetAverageQueueWaitTime(ginfo);
         }
 
-        for (GroupReference* itr = grp->GetFirstMember(); itr != nullptr; itr = itr->next())
+        for (GroupReference const* itr = grp->GetFirstMember(); itr != nullptr; itr = itr->next())
         {
             Player* member = itr->GetSource();
             if (!member)
@@ -678,7 +726,6 @@ void WorldSession::HandleBattlemasterJoinArena(WorldPackets::Battleground::Battl
             }
 
             // add to queue
-            sScriptMgr->OnPlayerJoinBattlegroundQueue(member);
             uint32 queueSlot = member->AddBattlegroundQueueId(bgQueueTypeId);
 
             WorldPackets::Battleground::BattlefieldStatusQueued battlefieldStatus;
@@ -695,7 +742,10 @@ void WorldSession::HandleBattlemasterJoinArena(WorldPackets::Battleground::Battl
     }
     else
     {
-        sScriptMgr->OnPlayerJoinBattlegroundQueue(_player);
+        bool allowed = true;
+        sScriptMgr->OnPlayerJoinBattlegroundQueue(_player, allowed);
+        if (!allowed)
+            return;
 
         GroupQueueInfo* ginfo = bgQueue.AddGroup(_player, nullptr, bracketEntry, packet.IsRated, false, arenaRating, matchmakerRating, ateamId, previousOpponents);
         uint32 avgTime = bgQueue.GetAverageQueueWaitTime(ginfo);

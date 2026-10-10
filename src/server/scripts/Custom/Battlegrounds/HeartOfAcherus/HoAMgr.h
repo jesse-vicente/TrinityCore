@@ -94,7 +94,7 @@ namespace HeartOfAcherus
         bool OnSpiritHealerQuery(Player* player, Creature* spiritHealer);
         bool OnSpiritHealerQueue(Player* player, Creature* spiritHealer);
         void OnLeaveRequest(Player* player);
-        void OnJoinRealBattlegroundQueue(Player* player);
+        bool CanJoinRealBattlegroundQueue(Player* player);           // false while queued or in a match (with the reason)
         void OnBeforeLogout(Player* player);
         void OnLogout(Player* player);
         void OnLogin(Player* player);
@@ -125,6 +125,7 @@ namespace HeartOfAcherus
         void TryCreateMatch();
         void RemoveFinishedMatches();
         void AddPlayer(Match& match, Player* player);
+        bool CanEnqueue(Player* player, std::string& error) const;   // the Enqueue rules, without side effects
         void OnMountRequest(Player* player, uint32 spellId);
         void OnFormRequest(Player* player, uint32 spellId, bool keepActive);
         void CastForClientUI(Player* player, uint32 spellId);

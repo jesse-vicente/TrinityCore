@@ -360,11 +360,18 @@ namespace HeartOfAcherus
 
     // ----------------------------------------------------------------- queue
 
-    bool Manager::Enqueue(Player* player, std::string& error, ObjectGuid group)
+    // the rules for entering the queue, without side effects; also used to validate a whole group before queueing any
+    bool Manager::CanEnqueue(Player* player, std::string& error) const
     {
         if (IsInMatch(player->GetGUID()))
         {
             error = "You are already in the battle for the Heart of Acherus.";
+            return false;
+        }
+
+        if (IsQueued(player->GetGUID()))
+        {
+            error = "You are already queued for the battle for the Heart of Acherus.";
             return false;
         }
 
@@ -389,9 +396,20 @@ namespace HeartOfAcherus
 
         TeamId const team = player->GetTeamId();
         if (team != TEAM_ALLIANCE && team != TEAM_HORDE)
+        {
+            error = "Your team cannot join the Heart of Acherus.";
+            return false;
+        }
+
+        return true;
+    }
+
+    bool Manager::Enqueue(Player* player, std::string& error, ObjectGuid group)
+    {
+        if (!CanEnqueue(player, error))
             return false;
 
-        if (!_queue.Add(player->GetGUID(), team, group))
+        if (!_queue.Add(player->GetGUID(), player->GetTeamId(), group))
         {
             error = "You are already queued for the battle for the Heart of Acherus.";
             return false;
@@ -430,32 +448,27 @@ namespace HeartOfAcherus
             return false;
         }
 
-        bool any = false;
-        std::string firstError;
+        // every online member must be able to queue, or the whole group stays out
         for (GroupReference* itr = group->GetFirstMember(); itr; itr = itr->next())
         {
             Player* member = itr->GetSource();
             if (!member)
                 continue;
 
-            if (IsQueued(member->GetGUID()))
-            {
-                any = true;
-                continue;
-            }
-
             std::string memberError;
-            if (Enqueue(member, memberError, leader->GetGUID()))
-                any = true;
-            else if (firstError.empty())
-                firstError = memberError;
+            if (!CanEnqueue(member, memberError))
+            {
+                error = Trinity::StringFormat("{} cannot queue: {}", member->GetName(), memberError);
+                return false;
+            }
         }
 
-        if (!any)
-        {
-            error = firstError.empty() ? "No member of your group could queue." : firstError;
-            return false;
-        }
+        for (GroupReference* itr = group->GetFirstMember(); itr; itr = itr->next())
+            if (Player* member = itr->GetSource())
+            {
+                std::string memberError;
+                Enqueue(member, memberError, leader->GetGUID());
+            }
 
         return true;
     }
@@ -762,11 +775,14 @@ namespace HeartOfAcherus
         _pendingLeaves.push_back(player->GetGUID());
     }
 
-    // the two queues exclude each other: joining a real one leaves this one
-    void Manager::OnJoinRealBattlegroundQueue(Player* player)
+    // the PvP queues exclude the Acherus one: while queued or in a match the player cannot join a real battleground
+    bool Manager::CanJoinRealBattlegroundQueue(Player* player)
     {
-        if (Dequeue(player->GetGUID()))
-            ChatHandler(player->GetSession()).SendSysMessage("You left the queue for the battle for the Heart of Acherus to join a battleground.");
+        if (!IsQueued(player->GetGUID()) && !IsInMatch(player->GetGUID()))
+            return true;
+
+        ChatHandler(player->GetSession()).SendSysMessage("You cannot join a battleground or arena while queued for the Heart of Acherus.");
+        return false;
     }
 
     // before the player is saved, so the rune auras are never stored

@@ -204,9 +204,10 @@ public:
         sHeartOfAcherusMgr->OnLeaveRequest(player);
     }
 
-    void OnJoinBattlegroundQueue(Player* player) override
+    void OnJoinBattlegroundQueue(Player* player, bool& allowed) override
     {
-        sHeartOfAcherusMgr->OnJoinRealBattlegroundQueue(player);
+        if (!sHeartOfAcherusMgr->CanJoinRealBattlegroundQueue(player))
+            allowed = false;
     }
 
     void OnCheckSanctuary(Player* player, bool& isSanctuary) override
