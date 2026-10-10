@@ -57,7 +57,7 @@ namespace HeartOfAcherus::BattlegroundUI
     Optional<uint32> FindFreeStatusSlot(Player const* player);      // a queue slot not used by a real battleground
     void SendStatusActive(Player* player, uint32 slot, uint32 instanceId, uint32 shutdownTimer, uint32 startTimer, TeamId team);
     void SendStatusQueued(Player* player, uint32 slot);
-    void SendStatusConfirm(Player* player, uint32 slot, uint32 instanceId, uint32 mapId, uint32 timeout);
+    void SendStatusConfirm(Player* player, uint32 slot, uint32 mapId, uint32 timeout);
     void SendStatusNone(Player* player, uint32 slot);
 }
 

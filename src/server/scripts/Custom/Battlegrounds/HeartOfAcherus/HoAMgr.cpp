@@ -566,7 +566,7 @@ namespace HeartOfAcherus
         if (!slot)
             return;
 
-        BattlegroundUI::SendStatusConfirm(player, *slot, invite.MatchId, WorldStates::FakeMapId, invite.TimeLeft);
+        BattlegroundUI::SendStatusConfirm(player, *slot, WorldStates::FakeMapId, invite.TimeLeft);
         _clientUI.SetRelabel(player, true);
     }
 
@@ -580,7 +580,7 @@ namespace HeartOfAcherus
             return;
 
         _invites[player->GetGUID()] = { match.GetId(), player->GetTeamId(), Timers::InviteWait };
-        BattlegroundUI::SendStatusConfirm(player, *slot, match.GetId(), WorldStates::FakeMapId, Timers::InviteWait);
+        BattlegroundUI::SendStatusConfirm(player, *slot, WorldStates::FakeMapId, Timers::InviteWait);
         _clientUI.SetRelabel(player, true);
 
         TC_LOG_INFO("scripts", "HeartOfAcherus: invited {} to match {}", player->GetName(), match.GetId());

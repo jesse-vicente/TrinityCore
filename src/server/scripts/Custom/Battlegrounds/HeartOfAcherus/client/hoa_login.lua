@@ -49,6 +49,20 @@ local function IsRealEyeOfTheStorm()
     return name ~= nil and GetRealZoneText() == name
 end
 
+-- the "Enter Battle" popup is a StaticPopup built with the localized Eye of the Storm name; swap it for ours
+if StaticPopup_Show then
+    local OrigStaticPopup_Show = StaticPopup_Show
+    StaticPopup_Show = function(which, textArg1, textArg2, data)
+        if AcherusBG_UI.active and not IsRealEyeOfTheStorm() and which == "CONFIRM_BATTLEFIELD_ENTRY" and type(textArg1) == "string" then
+            local from = LocalizedAcherusName()
+            if from and string.find(textArg1, from, 1, true) then
+                textArg1 = TITLE
+            end
+        end
+        return OrigStaticPopup_Show(which, textArg1, textArg2, data)
+    end
+end
+
 -- our scoreboard column instead of the Eye of the Storm one; the empty icon makes the client draw the plain number
 local POINTS_TOOLTIP = "Points earned by holding runes and killing enemies."
 
