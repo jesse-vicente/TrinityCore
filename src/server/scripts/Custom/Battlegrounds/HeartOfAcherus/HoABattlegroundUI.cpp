@@ -131,6 +131,14 @@ namespace HeartOfAcherus::BattlegroundUI
         player->SendDirectMessage(status.Write());
     }
 
+    // the red error the client shows for a refused queue, like BattlegroundMgr::BuildBattlegroundStatusFailed
+    void SendStatusFailed(Player* player, GroupJoinBattlegroundResult result)
+    {
+        WorldPackets::Battleground::BattlefieldStatusFailed status;
+        status.Reason = result;
+        player->SendDirectMessage(status.Write());
+    }
+
     void SendStatusNone(Player* player, uint32 slot)
     {
         WorldPackets::Battleground::BattlefieldStatusNone status;

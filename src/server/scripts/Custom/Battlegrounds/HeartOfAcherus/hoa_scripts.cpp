@@ -90,7 +90,8 @@ struct npc_heart_of_acherus_battlemaster : public ScriptedAI
             case ACTION_JOIN_QUEUE:
             {
                 std::string error;
-                if (sHeartOfAcherusMgr->Enqueue(player, error))
+                GroupJoinBattlegroundResult reason = ERR_BATTLEGROUND_JOIN_FAILED;
+                if (sHeartOfAcherusMgr->Enqueue(player, error, reason))
                     handler.SendSysMessage("You are now queued for the battle for the Heart of Acherus. You will be taken there when the battle is ready.");
                 else if (!error.empty())
                     handler.SendSysMessage(error);
@@ -204,9 +205,13 @@ public:
         sHeartOfAcherusMgr->OnLeaveRequest(player);
     }
 
-    void OnJoinBattlegroundQueue(Player* player) override
+    void OnJoinBattlegroundQueue(Player* player, bool& allowed, GroupJoinBattlegroundResult& reason) override
     {
-        sHeartOfAcherusMgr->OnJoinRealBattlegroundQueue(player);
+        if (!sHeartOfAcherusMgr->CanJoinRealBattlegroundQueue(player))
+        {
+            allowed = false;
+            reason = ERR_BATTLEGROUND_TOO_MANY_QUEUES;
+        }
     }
 
     void OnCheckSanctuary(Player* player, bool& isSanctuary) override

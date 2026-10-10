@@ -109,10 +109,11 @@ check Lua do Warden, não derruba o cliente e os relabels funcionam.
 
 - **Lista de BGs (aba Battlegrounds):** o `PVPBattlegroundFrame` lista os tipos do `BattlemasterList.dbc`, sem id
   livre. A parte 1 envolve `GetNumBattlegroundTypes`/`GetBattlegroundInfo` para expor uma entrada "Heart of Acherus"
-  na posição 2 (depois da Random Battleground), com selo verde "NEW"; o update nativo a desenha e rola com a lista.
-  Selecionada, mostra a lore e a arte da Random Battleground (`Interface\PVPFrame\PvpRandomBg`). "Join"/"Join as
-  Group" mandam `.acherus queue`. O ícone de fila sai da linha do EotS e vai para a nossa. A entrada é reconhecida
-  pelo nome exibido, não pelo índice (ambíguo quando a lista foi montada sem o wrapper).
+  na posição 2 (depois da Random Battleground), com selo verde "NOVA"; o update nativo a desenha e rola com a lista.
+  Selecionada, mostra a lore (em português) e a arte da Random Battleground (`Interface\PVPFrame\PvpRandomBg`).
+  "Join" manda `.acherus join` e "Join as Group" manda `.acherus join group` (a party/raid entra no mesmo match). O
+  ícone de fila sai da linha do EotS e vai para a nossa. A entrada é reconhecida pelo nome exibido, não pelo índice
+  (ambíguo quando a lista foi montada sem o wrapper).
 - **Minimapa e dropdown:** o tooltip do botão de BG (via `MiniMapBattlefieldFrame_OnUpdate`) e o título do menu do
   clique direito trocam o nome localizado do EotS por "Heart of Acherus".
 - **Auras do portador:** os Portal States (33338/33339/33340) são relabelados (ícone de DK, nome, tooltip com os

@@ -37,13 +37,14 @@ namespace HeartOfAcherus
     public:
         using TeamPlayers = std::array<std::vector<Player*>, PVP_TEAMS_COUNT>;
 
-        bool Add(ObjectGuid guid, TeamId team);                     // false when already queued
+        bool Add(ObjectGuid guid, TeamId team, ObjectGuid group = {}); // false when already queued; group keeps a party together
         bool Remove(ObjectGuid guid);
         bool Contains(ObjectGuid guid) const;
         std::array<std::size_t, PVP_TEAMS_COUNT> GetSizes() const;
         std::vector<ObjectGuid> GetAll() const;
 
-        // connected players able to enter a match, up to freeSlots per team; dropOffline removes the disconnected ones
+        // connected players able to enter a match, up to freeSlots per team; a group is taken whole or not at all, and
+        // dropOffline removes the disconnected ones
         TeamPlayers Collect(std::array<uint32, PVP_TEAMS_COUNT> const& freeSlots, bool dropOffline);
 
         // battlefield status slot of the fake queued status, kept while queued
@@ -51,8 +52,14 @@ namespace HeartOfAcherus
         Optional<uint32> ReleaseStatusSlot(ObjectGuid guid);
 
     private:
+        struct Entry
+        {
+            ObjectGuid Guid;
+            ObjectGuid Group;                                       // guid of the group leader, or the player when solo
+        };
+
         mutable std::mutex _lock;
-        std::array<std::deque<ObjectGuid>, PVP_TEAMS_COUNT> _queues;
+        std::array<std::deque<Entry>, PVP_TEAMS_COUNT> _queues;
         std::unordered_map<ObjectGuid, uint32> _statusSlots;
     };
 }

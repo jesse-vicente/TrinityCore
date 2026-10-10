@@ -1986,9 +1986,9 @@ void ScriptMgr::OnPlayerLeaveBattlefield(Player* player)
     FOREACH_SCRIPT(PlayerScript)->OnLeaveBattlefield(player);
 }
 
-void ScriptMgr::OnPlayerJoinBattlegroundQueue(Player* player)
+void ScriptMgr::OnPlayerJoinBattlegroundQueue(Player* player, bool& allowed, GroupJoinBattlegroundResult& reason)
 {
-    FOREACH_SCRIPT(PlayerScript)->OnJoinBattlegroundQueue(player);
+    FOREACH_SCRIPT(PlayerScript)->OnJoinBattlegroundQueue(player, allowed, reason);
 }
 
 bool ScriptMgr::OnPlayerCheckSanctuary(Player* player, bool isSanctuary)
@@ -2840,7 +2840,7 @@ void PlayerScript::OnWardenLuaExecuted(Player* /*player*/)
 {
 }
 
-void PlayerScript::OnJoinBattlegroundQueue(Player* /*player*/)
+void PlayerScript::OnJoinBattlegroundQueue(Player* /*player*/, bool& /*allowed*/, GroupJoinBattlegroundResult& /*reason*/)
 {
 }
 
