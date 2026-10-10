@@ -117,20 +117,34 @@ namespace HeartOfAcherus
             uint8 Attempts = 0;
         };
 
+        // a player invited to an already created match, waiting for the "Enter Battle" answer
+        struct Invite
+        {
+            uint32 MatchId = 0;
+            TeamId Team = TEAM_ALLIANCE;
+            uint32 TimeLeft = 0;
+        };
+
         Manager();
 
         void ProcessRequests();
         void ProcessPendingReturns(uint32 diff);
+        void TickInvites(uint32 diff);
         void FillOpenMatches();
         void TryCreateMatch();
         void RemoveFinishedMatches();
         void AddPlayer(Match& match, Player* player);
         bool CanEnqueue(Player* player, std::string& error) const;   // the Enqueue rules, without side effects
+        void InvitePlayer(Player* player, Match& match);
+        void CancelInvite(ObjectGuid guid);
+        Match* FindMatchById(uint32 id) const;
+        bool IsInvited(ObjectGuid guid) const { return _invites.find(guid) != _invites.end(); }
         void OnMountRequest(Player* player, uint32 spellId);
         void OnFormRequest(Player* player, uint32 spellId, bool keepActive);
         void CastForClientUI(Player* player, uint32 spellId);
         void SendQueueStatus(Player* player);
         void ClearQueueStatus(ObjectGuid guid, Player* player);
+        void SendInviteStatus(Player* player, Invite const& invite);
         RuneState const* GetCarriedRuneState(ObjectGuid guid) const;
         std::vector<ObjectGuid> GetParticipants() const;
 
@@ -140,6 +154,7 @@ namespace HeartOfAcherus
 
         std::vector<std::unique_ptr<Match>> _matches;
         std::unordered_map<ObjectGuid, Match*> _playerMatch;        // only changed in the world update
+        std::unordered_map<ObjectGuid, Invite> _invites;            // invited players, waiting for the port answer
         std::unordered_map<ObjectGuid, PendingReturn> _pendingReturns; // world thread only (login and world update)
         uint32 _usedPhases = 0;
         uint32 _nextMatchId = 1;

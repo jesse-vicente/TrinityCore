@@ -131,6 +131,17 @@ namespace HeartOfAcherus::BattlegroundUI
         player->SendDirectMessage(status.Write());
     }
 
+    // the "Enter Battle" popup of the PvP frame; accepting sends CMSG_BATTLEFIELD_PORT. No instance id: the client
+    // would append it to the (faked Eye of the Storm) name
+    void SendStatusConfirm(Player* player, uint32 slot, uint32 mapId, uint32 timeout)
+    {
+        WorldPackets::Battleground::BattlefieldStatusNeedConfirmation status;
+        FillStatusHeader(status.Hdr, player, slot);
+        status.Mapid = mapId;
+        status.Timeout = timeout;
+        player->SendDirectMessage(status.Write());
+    }
+
     void SendStatusNone(Player* player, uint32 slot)
     {
         WorldPackets::Battleground::BattlefieldStatusNone status;

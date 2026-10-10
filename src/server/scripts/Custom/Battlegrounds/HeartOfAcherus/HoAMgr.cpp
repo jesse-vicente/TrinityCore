@@ -96,7 +96,7 @@ namespace HeartOfAcherus
 
     Manager::Manager()
     {
-        _clientUI.SetParticipantCheck([this](ObjectGuid guid) { return IsQueued(guid) || IsInMatch(guid); });
+        _clientUI.SetParticipantCheck([this](ObjectGuid guid) { return IsQueued(guid) || IsInMatch(guid) || IsInvited(guid); });
         // "mount" (mount button) summons the Acherus Deathcharger, "mount <spell id>" (client hook) the player's own mount
         _clientUI.RegisterCommand("mount", [this](Player* player, std::string const& args)
         {
@@ -170,6 +170,8 @@ namespace HeartOfAcherus
         ProcessPendingReturns(diff);
         _clientUI.Update(diff);
 
+        TickInvites(diff);
+
         FillOpenMatches();
         TryCreateMatch();
 
@@ -222,15 +224,14 @@ namespace HeartOfAcherus
                 if (freeSlots[matchPlayer.Team])
                     --freeSlots[matchPlayer.Team];
 
+            // a player invited but not yet entered already holds his place
+            for (auto const& [guid, invite] : _invites)
+                if (invite.MatchId == match->GetId() && freeSlots[invite.Team])
+                    --freeSlots[invite.Team];
+
             for (std::vector<Player*> const& team : _queue.Collect(freeSlots, false))
-            {
                 for (Player* player : team)
-                {
-                    Dequeue(player->GetGUID());
-                    AddPlayer(*match, player);
-                    TC_LOG_INFO("scripts", "HeartOfAcherus: {} joined match {} in progress", player->GetName(), match->GetId());
-                }
-            }
+                    InvitePlayer(player, *match);
         }
     }
 
@@ -259,13 +260,8 @@ namespace HeartOfAcherus
 
         Match& match = *_matches.emplace_back(std::make_unique<Match>(*this, _nextMatchId++, phaseMask));
         for (std::vector<Player*> const& team : ready)
-        {
             for (Player* player : team)
-            {
-                Dequeue(player->GetGUID());
-                AddPlayer(match, player);
-            }
-        }
+                InvitePlayer(player, match);
 
         TC_LOG_INFO("scripts", "HeartOfAcherus: match {} created in phase {} ({} x {})", match.GetId(), phaseMask, ready[TEAM_ALLIANCE].size(), ready[TEAM_HORDE].size());
         match.StartPreparation();
@@ -359,6 +355,41 @@ namespace HeartOfAcherus
     }
 
     // ----------------------------------------------------------------- queue
+
+    // invitees that let the "Enter Battle" popup expire are dropped, and a match left without players and invites is ended
+    void Manager::TickInvites(uint32 diff)
+    {
+        for (auto itr = _invites.begin(); itr != _invites.end();)
+        {
+            if (itr->second.TimeLeft > diff)
+            {
+                itr->second.TimeLeft -= diff;
+                ++itr;
+                continue;
+            }
+
+            ObjectGuid const guid = itr->first;
+            ClearQueueStatus(guid, ObjectAccessor::FindConnectedPlayer(guid));
+            itr = _invites.erase(itr);
+        }
+
+        for (std::unique_ptr<Match>& match : _matches)
+        {
+            if (match->GetStatus() != MatchStatus::Preparation || !match->GetPlayers().empty())
+                continue;
+
+            bool invited = false;
+            for (auto const& [guid, invite] : _invites)
+                if (invite.MatchId == match->GetId())
+                {
+                    invited = true;
+                    break;
+                }
+
+            if (!invited)
+                match->End(TEAM_NEUTRAL);
+        }
+    }
 
     // the rules for entering the queue, without side effects; also used to validate a whole group before queueing any
     bool Manager::CanEnqueue(Player* player, std::string& error) const
@@ -528,6 +559,48 @@ namespace HeartOfAcherus
         _clientUI.SetRelabel(player, false);
     }
 
+    // re-sends the "Enter Battle" popup, e.g. after a UI reload; the remaining time is kept
+    void Manager::SendInviteStatus(Player* player, Invite const& invite)
+    {
+        Optional<uint32> slot = _queue.AssignStatusSlot(player);
+        if (!slot)
+            return;
+
+        BattlegroundUI::SendStatusConfirm(player, *slot, WorldStates::FakeMapId, invite.TimeLeft);
+        _clientUI.SetRelabel(player, true);
+    }
+
+    // takes a queued player out of the queue but keeps the status slot, and asks him to enter the created match
+    void Manager::InvitePlayer(Player* player, Match& match)
+    {
+        _queue.Remove(player->GetGUID());
+
+        Optional<uint32> slot = _queue.AssignStatusSlot(player);
+        if (!slot)
+            return;
+
+        _invites[player->GetGUID()] = { match.GetId(), player->GetTeamId(), Timers::InviteWait };
+        BattlegroundUI::SendStatusConfirm(player, *slot, WorldStates::FakeMapId, Timers::InviteWait);
+        _clientUI.SetRelabel(player, true);
+
+        TC_LOG_INFO("scripts", "HeartOfAcherus: invited {} to match {}", player->GetName(), match.GetId());
+    }
+
+    void Manager::CancelInvite(ObjectGuid guid)
+    {
+        if (_invites.erase(guid))
+            ClearQueueStatus(guid, ObjectAccessor::FindConnectedPlayer(guid));
+    }
+
+    Match* Manager::FindMatchById(uint32 id) const
+    {
+        for (std::unique_ptr<Match> const& match : _matches)
+            if (match->GetId() == id)
+                return match.get();
+
+        return nullptr;
+    }
+
     std::vector<ObjectGuid> Manager::GetParticipants() const
     {
         std::vector<ObjectGuid> guids;
@@ -537,6 +610,10 @@ namespace HeartOfAcherus
 
         std::vector<ObjectGuid> const queued = _queue.GetAll();
         guids.insert(guids.end(), queued.begin(), queued.end());
+
+        for (auto const& [guid, invite] : _invites)
+            guids.push_back(guid);
+
         return guids;
     }
 
@@ -809,6 +886,7 @@ namespace HeartOfAcherus
 
     void Manager::OnLogout(Player* player)
     {
+        CancelInvite(player->GetGUID());
         Dequeue(player->GetGUID());
         _clientUI.OnLogout(player->GetGUID());
     }
@@ -870,16 +948,19 @@ namespace HeartOfAcherus
             return;
         }
 
+        if (auto itr = _invites.find(player->GetGUID()); itr != _invites.end())
+        {
+            SendInviteStatus(player, itr->second);
+            return;
+        }
+
         if (IsQueued(player->GetGUID()))
             SendQueueStatus(player);
     }
 
-    // CMSG_BATTLEFIELD_PORT: the "Leave Queue" of the PvP frame; there is never an invitation to accept
+    // CMSG_BATTLEFIELD_PORT: accepting enters the invited match; declining (or "Leave Queue") drops the player
     bool Manager::OnBattlefieldPort(Player* player, uint64 queueID, bool acceptedInvite)
     {
-        if (acceptedInvite || !IsQueued(player->GetGUID()))
-            return false;
-
         BattlegroundQueueTypeId const queueTypeId = BattlegroundQueueTypeId::FromPacked(queueID);
         if (!BattlegroundUI::IsFakeQueue(queueTypeId))
             return false;
@@ -888,7 +969,35 @@ namespace HeartOfAcherus
         if (player->GetBattlegroundQueueIndex(queueTypeId) < PLAYER_MAX_BATTLEGROUND_QUEUES)
             return false;
 
-        if (Dequeue(player->GetGUID()))
+        ObjectGuid const guid = player->GetGUID();
+
+        if (auto itr = _invites.find(guid); itr != _invites.end())
+        {
+            uint32 const matchId = itr->second.MatchId;
+            _invites.erase(itr);
+
+            if (acceptedInvite)
+            {
+                if (Match* match = FindMatchById(matchId))
+                {
+                    _queue.ForgetStatusSlot(guid);
+                    AddPlayer(*match, player);
+                }
+                else
+                    ClearQueueStatus(guid, player);
+            }
+            else
+            {
+                ClearQueueStatus(guid, player);
+                ChatHandler(player->GetSession()).SendSysMessage("You declined the battle for the Heart of Acherus.");
+            }
+            return true;
+        }
+
+        if (acceptedInvite || !IsQueued(guid))
+            return false;
+
+        if (Dequeue(guid))
             ChatHandler(player->GetSession()).SendSysMessage("You left the queue for the battle for the Heart of Acherus.");
 
         return true;

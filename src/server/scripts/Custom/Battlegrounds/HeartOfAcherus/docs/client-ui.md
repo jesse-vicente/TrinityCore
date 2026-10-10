@@ -23,6 +23,10 @@ O cliente 3.3.5 não conhece o modo, então o módulo reaproveita frames nativos
 - **Ícone de BG no minimapa:** na fila, na preparação e na batalha. O cliente descarta o status enviado antes de
   terminar de carregar o mundo, por isso o módulo responde ao `CMSG_BATTLEFIELD_STATUS` e reenvia o active quando o
   jogador entra no mundo. Clicar abre o placar.
+- **Chamada ("Enter Battle"):** quando um jogador é pego, o módulo manda `BattlefieldStatusNeedConfirmation` (status
+  confirm, 60 s) no slot da fila; o popup nativo aparece e a resposta volta como `CMSG_BATTLEFIELD_PORT`. O status vai
+  sem `InstanceID` (o cliente anexaria o id ao nome); o popup é um `StaticPopup` (`CONFIRM_BATTLEFIELD_ENTRY`) e a
+  parte 1 do Lua troca o nome localizado do EotS por "Heart of Acherus".
 - **Spirit healer:** ao entrar no range do guide o cliente manda `CMSG_AREA_SPIRIT_HEALER_QUEUE`; o módulo responde
   `SMSG_AREA_SPIRIT_HEALER_TIME` e o popup nativo `AREA_SPIRIT_HEAL` mostra o contador. A onda revive só quem ainda
   está a 17 jardas do guide (raio `AREA_SPIRIT_HEALER_IN_RANGE` do cliente, medido em jogo), no lugar e com os
