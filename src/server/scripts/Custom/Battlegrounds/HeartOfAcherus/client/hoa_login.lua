@@ -226,9 +226,9 @@ watcher:SetScript("OnEvent", RelabelAll)
 
 local ACHERUS_BG_TEXTURE = "Interface\\PVPFrame\\PvpRandomBg" -- the same art the Random Battleground uses
 local ACHERUS_BG_LORE =
-    "The runeforges of Acherus have become the prize of a bitter quarrel.\n\n\nThe Knights of the Ebon Blade " ..
-    "have turned on one another over who will command them, and the Alliance and the Horde have seized the " ..
-    "chance to exploit that schism - each faction intent on turning the death knights' strife to its own gain."
+    "As runeforges de Acherus tornaram-se o prêmio de uma amarga disputa.\n\n\nOs Cavaleiros da Lâmina de Ébano " ..
+    "voltaram-se uns contra os outros para decidir quem os comandará, e a Aliança e a Horda agarraram a " ..
+    "chance de explorar essa cisão - cada facção decidida a converter a contenda dos cavaleiros da morte em proveito próprio."
 
 local OrigGetNumBattlegroundTypes = GetNumBattlegroundTypes
 local OrigGetBattlegroundInfo = GetBattlegroundInfo
@@ -381,7 +381,7 @@ if PVPBattleground_UpdateQueueStatus then
 end
 
 -- "NEW" badge after our name; the rows are recycled while scrolling, so it follows whichever row shows our entry
-local NEW_BADGE_TEXT = "NEW"
+local NEW_BADGE_TEXT = "NOVA"
 
 -- each row gets its own badge (created once); only the row showing our entry shows it
 local function AcherusNewBadge()
@@ -419,10 +419,15 @@ if PVPBattleground_UpdateBattlegrounds then
     hooksecurefunc("PVPBattleground_UpdateBattlegrounds", AcherusNewBadge)
 end
 
--- the native Join queues "first available"; for our entry send the module command instead
+-- the native Join queues "first available"; for our entry send the module command instead. Both buttons always
+-- queue the player himself (never toggle, never the selected target); the group one queues the whole party/raid
 local function AcherusJoin(self, button, down)
     if PVPBattlegroundFrame and PVPBattlegroundFrame.selectedBG == AcherusBGIndex() then
-        SendChatMessage(".acherus queue", "SAY")
+        if self == PVPBattlegroundFrameGroupJoinButton then
+            SendChatMessage(".acherus join group", "SAY")
+        else
+            SendChatMessage(".acherus join", "SAY")
+        end
         return
     end
     if self.AcherusOrigOnClick then
