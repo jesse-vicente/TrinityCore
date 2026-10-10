@@ -50,6 +50,7 @@ namespace HeartOfAcherus
         // battlefield status slot of the fake queued status, kept while queued
         Optional<uint32> AssignStatusSlot(Player const* player);
         Optional<uint32> ReleaseStatusSlot(ObjectGuid guid);
+        void ForgetStatusSlot(ObjectGuid guid);                     // drops the slot without sending a status
 
     private:
         struct Entry

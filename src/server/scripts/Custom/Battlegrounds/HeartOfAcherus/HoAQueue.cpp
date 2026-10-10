@@ -160,4 +160,10 @@ namespace HeartOfAcherus
         _statusSlots.erase(itr);
         return slot;
     }
+
+    void MatchQueue::ForgetStatusSlot(ObjectGuid guid)
+    {
+        std::lock_guard<std::mutex> lock(_lock);
+        _statusSlots.erase(guid);
+    }
 }

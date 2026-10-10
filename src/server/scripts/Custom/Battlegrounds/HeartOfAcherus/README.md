@@ -185,15 +185,18 @@ do time. Só o GUID do grupo é guardado (o `Group` pode se desfazer dentro do `
    `PlayersPerTeam` jogadores elegíveis por fila (vivos, não em voo e fora de instância); um grupo é validado inteiro —
    se algum membro não puder, o grupo todo é recusado — e, ao entrar, é levado inteiro ou espera. Antes de criar uma partida, a fila preenche as vagas das partidas abertas, contando os
    offline dentro dos 300 s; quem entra com a batalha começada vai direto ao spawn.
-3. **Entrada:** a posição vai para `custom_heart_of_acherus_return`; o jogador desmonta, recebe a phase e vai ao
+3. **Chamada:** a partida é criada, mas quem foi pego só entra se aceitar: recebe o popup nativo "Enter Battle"
+   (status confirm, 60 s). Aceitar teleporta; recusar ou deixar expirar tira o jogador da fila. Uma partida sem
+   jogadores e sem convites pendentes é encerrada.
+4. **Entrada:** a posição vai para `custom_heart_of_acherus_return`; o jogador desmonta, recebe a phase e vai ao
    spawn do time, onde entra no raid do time.
-4. **Preparação (2 min):** domo com paredes em cada spawn, livro de instruções e spirit guide no spawn (como no
+5. **Preparação (2 min):** domo com paredes em cada spawn, livro de instruções e spirit guide no spawn (como no
    Warsong Gulch). Avisos aos 60 s e 30 s. As forjas já brilham, mas as runas só saem na batalha.
-5. **Batalha (25 min):** somem domo, paredes, livro e guides do spawn; fantasmas ressuscitam no spawn. Aparecem o
+6. **Batalha (25 min):** somem domo, paredes, livro e guides do spawn; fantasmas ressuscitam no spawn. Aparecem o
    portal para o andar de cima e os 2 Berserk. Clicar numa forja dá a runa: efeito da presença de DK, auras e escala;
    o portador desmonta e perde stealth/invisibilidade. Do andar de cima as forjas não podem ser usadas.
-6. **Tick de 5 s:** pontos por portador conforme a zona; world states atualizados.
-7. **Morte:** a runa volta à forja (com anúncio). O Release leva ao cemitério mais próximo do time; a onda de 30 s
+7. **Tick de 5 s:** pontos por portador conforme a zona; world states atualizados.
+8. **Morte:** a runa volta à forja (com anúncio). O Release leva ao cemitério mais próximo do time; a onda de 30 s
    revive quem está no range do guide. Fantasma no salão sobe pelo portal.
 8. **Fim:** 1600 pontos ou tempo esgotado. Placar final com vencedor e todos parados (`SetClientControl`). Após
    2 min, ou pelo Leave, todos voltam à posição salva e recuperam phase, escala, auras e PvP.

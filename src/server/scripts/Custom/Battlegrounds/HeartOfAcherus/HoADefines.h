@@ -139,6 +139,7 @@ namespace HeartOfAcherus
         static constexpr uint32 ResurrectWave = 30 * IN_MILLISECONDS;
         static constexpr uint32 RuneStack = 15 * IN_MILLISECONDS;
         static constexpr uint32 PlayerCheck = 1 * IN_MILLISECONDS;
+        static constexpr uint32 InviteWait = 60 * IN_MILLISECONDS; // INVITE_ACCEPT_WAIT_TIME of battlegrounds
         static constexpr uint32 OfflineGrace = 300 * IN_MILLISECONDS;  // MAX_OFFLINE_TIME of battlegrounds
         static constexpr uint32 ReturnRetry = 1 * IN_MILLISECONDS;
         static constexpr uint8 ReturnMaxAttempts = 10;
