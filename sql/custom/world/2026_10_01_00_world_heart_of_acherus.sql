@@ -12,12 +12,13 @@ INSERT INTO `npc_text` (`ID`, `text0_0`, `text0_1`, `BroadcastTextID0`, `lang0`,
 (990000, 'The Ebon Blade tests its champions in the halls of Acherus. Claim the runes of Frost, Blood and Unholy at the runeforges and hold them for your faction, $N.', '', 0, 0, 1),
 (990001, 'Ten champions of each faction fight inside Acherus.$B$BClaim a rune at a runeforge and hold it. Every 5 seconds your faction scores 6 points while you stand in the sunken center, 4 on the runeforge platform and 2 outside the hall.$B$BThe rune empowers its carrier: more damage dealt, much more damage taken and less healing received, growing every 15 seconds. If the carrier falls, the rune returns to its runeforge.$B$BThe first faction to reach 1600 points wins. After 25 minutes, the highest score wins.', '', 0, 0, 1);
 
--- Clickable copies of the Acherus runeforges
+-- Clickable copies of the Acherus runeforges. Goober Data17 = allowMounted: the client does not dismount the player
+-- to use them; the script dismounts only who takes the rune
 DELETE FROM `gameobject_template` WHERE `entry` BETWEEN 990001 AND 990003;
-INSERT INTO `gameobject_template` (`entry`, `type`, `displayId`, `name`, `IconName`, `castBarCaption`, `unk1`, `size`, `ScriptName`) VALUES
-(990001, 10, 8175, 'Frost Runeforge',  '', '', '', 2.03, 'go_heart_of_acherus_runeforge'),
-(990002, 10, 8175, 'Blood Runeforge',  '', '', '', 2.03, 'go_heart_of_acherus_runeforge'),
-(990003, 10, 8175, 'Unholy Runeforge', '', '', '', 2.03, 'go_heart_of_acherus_runeforge');
+INSERT INTO `gameobject_template` (`entry`, `type`, `displayId`, `name`, `IconName`, `castBarCaption`, `unk1`, `size`, `Data17`, `ScriptName`) VALUES
+(990001, 10, 8175, 'Frost Runeforge',  '', '', '', 2.03, 1, 'go_heart_of_acherus_runeforge'),
+(990002, 10, 8175, 'Blood Runeforge',  '', '', '', 2.03, 1, 'go_heart_of_acherus_runeforge'),
+(990003, 10, 8175, 'Unholy Runeforge', '', '', '', 2.03, 1, 'go_heart_of_acherus_runeforge');
 
 -- Berserk Buff, copy of 179905: trap type 1 (Data4), respawned by the script after 3 minutes; Data2 0 and Data5 3
 -- give the 3 yard radius of the battleground buffs
