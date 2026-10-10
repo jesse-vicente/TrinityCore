@@ -68,7 +68,8 @@ namespace HeartOfAcherus
         ClientUI& GetClientUI() { return _clientUI; }
 
         // queue
-        bool Enqueue(Player* player, std::string& error);
+        bool Enqueue(Player* player, std::string& error, ObjectGuid group = {});
+        bool EnqueueGroup(Player* leader, std::string& error);      // the whole party/raid, kept in the same match
         bool Dequeue(ObjectGuid guid);
         bool IsQueued(ObjectGuid guid) const { return _queue.Contains(guid); }
         std::array<std::size_t, PVP_TEAMS_COUNT> GetQueueSizes() const { return _queue.GetSizes(); }

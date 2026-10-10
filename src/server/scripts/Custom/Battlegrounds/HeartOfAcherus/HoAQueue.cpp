@@ -21,6 +21,7 @@
 #include "ObjectAccessor.h"
 #include "Player.h"
 #include <algorithm>
+#include <unordered_set>
 
 namespace HeartOfAcherus
 {
@@ -34,23 +35,24 @@ namespace HeartOfAcherus
         }
     }
 
-    bool MatchQueue::Add(ObjectGuid guid, TeamId team)
+    bool MatchQueue::Add(ObjectGuid guid, TeamId team, ObjectGuid group)
     {
         std::lock_guard<std::mutex> lock(_lock);
-        for (std::deque<ObjectGuid> const& queue : _queues)
-            if (std::find(queue.begin(), queue.end(), guid) != queue.end())
-                return false;
+        for (std::deque<Entry> const& queue : _queues)
+            for (Entry const& entry : queue)
+                if (entry.Guid == guid)
+                    return false;
 
-        _queues[team].push_back(guid);
+        _queues[team].push_back({ guid, group.IsEmpty() ? guid : group });
         return true;
     }
 
     bool MatchQueue::Remove(ObjectGuid guid)
     {
         std::lock_guard<std::mutex> lock(_lock);
-        for (std::deque<ObjectGuid>& queue : _queues)
+        for (std::deque<Entry>& queue : _queues)
         {
-            auto itr = std::find(queue.begin(), queue.end(), guid);
+            auto itr = std::find_if(queue.begin(), queue.end(), [guid](Entry const& entry) { return entry.Guid == guid; });
             if (itr != queue.end())
             {
                 queue.erase(itr);
@@ -63,9 +65,10 @@ namespace HeartOfAcherus
     bool MatchQueue::Contains(ObjectGuid guid) const
     {
         std::lock_guard<std::mutex> lock(_lock);
-        for (std::deque<ObjectGuid> const& queue : _queues)
-            if (std::find(queue.begin(), queue.end(), guid) != queue.end())
-                return true;
+        for (std::deque<Entry> const& queue : _queues)
+            for (Entry const& entry : queue)
+                if (entry.Guid == guid)
+                    return true;
         return false;
     }
 
@@ -79,31 +82,57 @@ namespace HeartOfAcherus
     {
         std::lock_guard<std::mutex> lock(_lock);
         std::vector<ObjectGuid> guids;
-        for (std::deque<ObjectGuid> const& queue : _queues)
-            guids.insert(guids.end(), queue.begin(), queue.end());
+        for (std::deque<Entry> const& queue : _queues)
+            for (Entry const& entry : queue)
+                guids.push_back(entry.Guid);
         return guids;
     }
 
+    // a group is taken whole or not at all, so its members never end up in different matches; a member that is offline
+    // (when kept) or cannot enter right now makes the whole group wait
     MatchQueue::TeamPlayers MatchQueue::Collect(std::array<uint32, PVP_TEAMS_COUNT> const& freeSlots, bool dropOffline)
     {
         TeamPlayers players;
         std::lock_guard<std::mutex> lock(_lock);
+
         for (uint8 team = 0; team < PVP_TEAMS_COUNT; ++team)
         {
-            for (auto itr = _queues[team].begin(); itr != _queues[team].end();)
+            std::deque<Entry>& queue = _queues[team];
+
+            if (dropOffline)
+                for (auto itr = queue.begin(); itr != queue.end();)
+                    if (!ObjectAccessor::FindConnectedPlayer(itr->Guid))
+                        itr = queue.erase(itr);
+                    else
+                        ++itr;
+
+            std::unordered_set<ObjectGuid> seenGroups;
+            for (Entry const& first : queue)
             {
-                Player* player = ObjectAccessor::FindConnectedPlayer(*itr);
-                if (!player && dropOffline)
-                {
-                    itr = _queues[team].erase(itr);
+                if (!seenGroups.insert(first.Group).second)
                     continue;
+
+                std::vector<Player*> group;
+                bool blocked = false;
+                for (Entry const& entry : queue)
+                {
+                    if (entry.Group != first.Group)
+                        continue;
+
+                    Player* player = ObjectAccessor::FindConnectedPlayer(entry.Guid);
+                    if (!player || !IsEligibleForMatch(player))
+                    {
+                        blocked = true;
+                        continue;
+                    }
+                    group.push_back(player);
                 }
 
-                if (player && players[team].size() < freeSlots[team] && IsEligibleForMatch(player))
-                    players[team].push_back(player);
-                ++itr;
+                if (!blocked && !group.empty() && players[team].size() + group.size() <= freeSlots[team])
+                    players[team].insert(players[team].end(), group.begin(), group.end());
             }
         }
+
         return players;
     }
 

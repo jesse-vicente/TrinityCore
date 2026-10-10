@@ -23,6 +23,7 @@
 #include "Chat.h"
 #include "Config.h"
 #include "DatabaseEnv.h"
+#include "Group.h"
 #include "Log.h"
 #include "Map.h"
 #include "MapManager.h"
@@ -359,7 +360,7 @@ namespace HeartOfAcherus
 
     // ----------------------------------------------------------------- queue
 
-    bool Manager::Enqueue(Player* player, std::string& error)
+    bool Manager::Enqueue(Player* player, std::string& error, ObjectGuid group)
     {
         if (IsInMatch(player->GetGUID()))
         {
@@ -390,7 +391,7 @@ namespace HeartOfAcherus
         if (team != TEAM_ALLIANCE && team != TEAM_HORDE)
             return false;
 
-        if (!_queue.Add(player->GetGUID(), team))
+        if (!_queue.Add(player->GetGUID(), team, group))
         {
             error = "You are already queued for the battle for the Heart of Acherus.";
             return false;
@@ -398,6 +399,64 @@ namespace HeartOfAcherus
 
         SendQueueStatus(player);
         _clientUI.OnParticipantJoined(player);
+        return true;
+    }
+
+    // queues the whole party/raid under the leader, so the group is taken into the same match; already queued members
+    // are skipped, and a group bigger than a team is refused
+    bool Manager::EnqueueGroup(Player* leader, std::string& error)
+    {
+        Group* group = leader->GetGroup();
+        if (!group)
+        {
+            error = "You are not in a group.";
+            return false;
+        }
+
+        if (!group->IsLeader(leader->GetGUID()))
+        {
+            error = "Only the group leader can queue for the Heart of Acherus.";
+            return false;
+        }
+
+        uint32 members = 0;
+        for (GroupReference* itr = group->GetFirstMember(); itr; itr = itr->next())
+            if (itr->GetSource())
+                ++members;
+
+        if (members > _settings.PlayersPerTeam)
+        {
+            error = Trinity::StringFormat("A group of {} cannot queue for the Heart of Acherus ({} per team).", members, _settings.PlayersPerTeam);
+            return false;
+        }
+
+        bool any = false;
+        std::string firstError;
+        for (GroupReference* itr = group->GetFirstMember(); itr; itr = itr->next())
+        {
+            Player* member = itr->GetSource();
+            if (!member)
+                continue;
+
+            if (IsQueued(member->GetGUID()))
+            {
+                any = true;
+                continue;
+            }
+
+            std::string memberError;
+            if (Enqueue(member, memberError, leader->GetGUID()))
+                any = true;
+            else if (firstError.empty())
+                firstError = memberError;
+        }
+
+        if (!any)
+        {
+            error = firstError.empty() ? "No member of your group could queue." : firstError;
+            return false;
+        }
+
         return true;
     }
 

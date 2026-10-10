@@ -176,14 +176,14 @@ do time. Só o GUID do grupo é guardado (o `Group` pode se desfazer dentro do `
 
 ## Fluxo da partida
 
-1. **Fila:** NPC `990000` (`.npc add 990000`; hoje em Old Town, Stormwind), `.acherus queue` ou o "Join" da linha
-   "Heart of Acherus" na aba Battlegrounds da janela PvP. Exige nível 80 e nenhuma BG/arena nem fila real. Filas por
-   facção. Na fila o jogador recebe um status "queued" falso (botão no minimapa, "Leave Queue" funciona). Entrar numa
-   fila real tira o jogador da fila do Acherus.
+1. **Fila:** NPC `990000` (`.npc add 990000`; hoje em Old Town, Stormwind), `.acherus join` ou o "Join" da linha
+   "Heart of Acherus" na aba Battlegrounds da janela PvP (o botão "Join as Group" enfileira a party/raid, que entra no
+   mesmo match). Exige nível 80 e nenhuma BG/arena nem fila real. Filas por facção. Na fila o jogador recebe um status
+   "queued" falso (botão no minimapa, "Leave Queue" funciona). Entrar numa fila real tira o jogador da fila do Acherus.
 2. **Início:** com o mínimo de cada lado (`MinPlayersPerTeam`) ou `.acherus start`, a partida pega até
-   `PlayersPerTeam` jogadores elegíveis por fila (vivos, fora de combate, de voo e de instância). Antes de criar uma
-   partida, a fila preenche as vagas das partidas abertas, contando os offline dentro dos 300 s; quem entra com a
-   batalha começada vai direto ao spawn.
+   `PlayersPerTeam` jogadores elegíveis por fila (vivos, fora de combate, de voo e de instância); um grupo é sempre
+   levado inteiro ou espera. Antes de criar uma partida, a fila preenche as vagas das partidas abertas, contando os
+   offline dentro dos 300 s; quem entra com a batalha começada vai direto ao spawn.
 3. **Entrada:** a posição vai para `custom_heart_of_acherus_return`; o jogador desmonta, recebe a phase e vai ao
    spawn do time, onde entra no raid do time.
 4. **Preparação (2 min):** domo com paredes em cada spawn, livro de instruções e spirit guide no spawn (como no
@@ -221,12 +221,13 @@ Bloco documentado em [`conf/heart_of_acherus.conf.dist`](conf/heart_of_acherus.c
 
 ## Comandos
 
-`.acherus queue` usa `RBAC_PERM_JOIN_NORMAL_BG` (todo jogador tem), porque o "Join" da janela PvP o envia; os demais
-usam `RBAC_PERM_COMMAND_DEBUG`.
+`.acherus join` usa `RBAC_PERM_JOIN_NORMAL_BG` (todo jogador tem), porque é o "Join" da janela PvP; `.acherus queue` e
+os demais usam `RBAC_PERM_COMMAND_DEBUG`.
 
 | Comando | Efeito |
 |---|---|
-| `.acherus queue` | GM: coloca/tira o jogador selecionado (ou você) da fila; jogador: enfileira só a si |
+| `.acherus join [group]` | o "Join" da aba Battlegrounds: enfileira você; com `group`, a party/raid inteira (mesmo match); idempotente |
+| `.acherus queue` | GM: coloca/tira o jogador selecionado (ou você) da fila |
 | `.acherus start` | inicia uma partida com quem está na fila, ignorando o mínimo |
 | `.acherus begin` | pula a preparação da sua partida (como `.bg start`); fora de uma, de todas |
 | `.acherus stop` | encerra todas as partidas como empate |
