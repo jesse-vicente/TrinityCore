@@ -147,9 +147,11 @@ namespace HeartOfAcherus
         static constexpr uint32 BuffRespawn = 180 * IN_MILLISECONDS;   // BUFF_RESPAWN_TIME of battlegrounds
     }
 
-    // carrier modifiers per stack, a stack every 15 s; the stacks keep counting but the modifiers stop at the caps
+    // carrier modifiers per stack, a stack every 15 s; the stacks stop at MaxStacks, where every modifier is capped
     namespace RunePower
     {
+        static constexpr uint32 MaxStacks = 5;                      // the caps below are all reached at 5 stacks
+
         static constexpr float DamageDonePct = 20.0f;
         static constexpr float DamageDoneMaxPct = 100.0f;
         static constexpr float DamageTakenPct = 20.0f;
