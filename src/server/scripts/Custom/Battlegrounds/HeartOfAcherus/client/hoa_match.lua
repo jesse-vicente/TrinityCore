@@ -37,9 +37,10 @@ do
     end
 end
 
--- always a helpful buff, so the buff index matches every frame; count = the stacks the server mirrors as charges
-local function RuneAuraFor(unit, index)
-    local name, _, _, count = UnitBuff(unit, index)
+-- count = the stacks the server mirrors as charges; filter is passed through so a debuff (HARMFUL) never reads the
+-- helpful list, where the rune lives
+local function RuneAuraFor(unit, index, filter)
+    local name, _, _, count = UnitAura(unit, index, filter)
     return name and RUNE_AURAS[name], count or 0
 end
 
@@ -115,13 +116,14 @@ hooksecurefunc("PartyMemberBuffTooltip_Update", function(self)
     end
 end)
 
--- aura tooltips (SetUnitAura for the player buffs, SetUnitBuff elsewhere): the description has no Lua API, so it
--- is appended with the totals of the current stacks; Show() recomputes the height
-local function RuneTooltip(self, unit, index)
+-- aura tooltips (SetUnitAura for the player's buffs and debuffs, SetUnitBuff elsewhere): the description has no Lua
+-- API, so it is appended with the totals of the current stacks; Show() recomputes the height. "filter" keeps a
+-- debuff tooltip (HARMFUL) from being read as the helpful rune aura.
+local function RuneTooltip(self, unit, index, filter)
     if not AcherusBG_UI.active then
         return
     end
-    local def, count = RuneAuraFor(unit, index)
+    local def, count = RuneAuraFor(unit, index, filter)
     if not def then
         return
     end
