@@ -115,6 +115,7 @@ namespace HeartOfAcherus
     private:
         void StartBattle();
         void CheckPlayers();
+        void ResetPowers();
         void ScoreTick();
         void AwardPoints(MatchPlayer& matchPlayer, Player* player, uint32 points);
 
@@ -126,6 +127,7 @@ namespace HeartOfAcherus
         uint32 _tickTimer = 0;
         uint32 _playerCheckTimer = 0;
         uint32 _markerTimer = 0;
+        uint32 _powerResetTimer = 0;
         uint32 _battleTime = 0;                                     // battle time played, set when the match ends
         std::array<uint32, PVP_TEAMS_COUNT> _score = { };
         Optional<TeamId> _winner;

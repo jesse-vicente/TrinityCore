@@ -58,6 +58,8 @@ namespace HeartOfAcherus
         static constexpr uint32 ResurrectionVisual = 24171;
         static constexpr uint32 ResurrectEffect = 6962;             // as in Battleground::_ProcessResurrect
         static constexpr uint32 SpiritHealMana = 44535;
+        static constexpr uint32 Preparation = 44521;                // SPELL_PREPARATION of battlegrounds, -100% power cost
+        static constexpr uint32 SafeFall = 24350;                   // SPELL_AURA_SAFE_FALL, hidden and passive, no visual
         static constexpr uint32 PreparationDome = 50461;            // Anti-Magic Zone: only its channel kit is used
         static constexpr uint32 StairsPortal = 42049;               // Boss Frost Portal State (dummy)
         static constexpr uint32 AcherusDeathcharger = 48778;        // mount aura and +100% mounted speed
@@ -134,6 +136,7 @@ namespace HeartOfAcherus
     namespace Timers
     {
         static constexpr uint32 Preparation = 2 * MINUTE * IN_MILLISECONDS;
+        static constexpr uint32 PreparationPowerReset = 5 * IN_MILLISECONDS;   // m_ResetStatTimer of Battleground::_ProcessJoin
         static constexpr uint32 MatchDuration = 25 * MINUTE * IN_MILLISECONDS;
         static constexpr uint32 EndWait = 2 * MINUTE * IN_MILLISECONDS;
         static constexpr uint32 ResurrectWave = 30 * IN_MILLISECONDS;
