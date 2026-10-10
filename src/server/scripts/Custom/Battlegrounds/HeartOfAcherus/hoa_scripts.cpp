@@ -23,6 +23,7 @@
 #include "ScriptedCreature.h"
 #include "ScriptedGossip.h"
 #include "ScriptMgr.h"
+#include "SpellScript.h"
 #include "StringFormat.h"
 #include "WorldStatePackets.h"
 
@@ -114,6 +115,26 @@ struct go_heart_of_acherus_runeforge : public GameObjectAI
     {
         sHeartOfAcherusMgr->OnForgeUse(player, me);
         return true;
+    }
+};
+
+// immunities, stealth, invisibility and Nitro Boosts (spell_script_names): refused to a rune carrier, and on one
+class spell_heart_of_acherus_rune_carrier_restricted : public SpellScript
+{
+    PrepareSpellScript(spell_heart_of_acherus_rune_carrier_restricted);
+
+    SpellCastResult CheckCast()
+    {
+        Unit* target = GetExplTargetUnit();
+        if (sHeartOfAcherusMgr->IsRuneCarrier(GetCaster()->GetGUID()) || (target && sHeartOfAcherusMgr->IsRuneCarrier(target->GetGUID())))
+            return SPELL_FAILED_CANT_DO_THAT_RIGHT_NOW;
+
+        return SPELL_CAST_OK;
+    }
+
+    void Register() override
+    {
+        OnCheckCast += SpellCheckCastFn(spell_heart_of_acherus_rune_carrier_restricted::CheckCast);
     }
 };
 
@@ -284,6 +305,7 @@ void AddSC_heart_of_acherus()
 {
     RegisterCreatureAI(npc_heart_of_acherus_battlemaster);
     RegisterGameObjectAI(go_heart_of_acherus_runeforge);
+    RegisterSpellScript(spell_heart_of_acherus_rune_carrier_restricted);
     new player_heart_of_acherus();
     new unit_heart_of_acherus();
     new world_heart_of_acherus();

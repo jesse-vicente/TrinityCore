@@ -88,6 +88,7 @@ namespace HeartOfAcherus
         void OnUpdateZone(Player* player) const;
         bool IsSanctuaryDisabled(Player const* player) const;
         bool IsOutdoorsForced(Player const* player) const;
+        bool IsRuneCarrier(ObjectGuid guid) const { return GetCarriedRuneState(guid) != nullptr; }
         bool OnRepop(Player* player);
         bool OnSpiritHealerQuery(Player* player, Creature* spiritHealer);
         bool OnSpiritHealerQueue(Player* player, Creature* spiritHealer);
