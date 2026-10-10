@@ -72,6 +72,7 @@ namespace HeartOfAcherus
         bool EnqueueGroup(Player* leader, std::string& error, GroupJoinBattlegroundResult& reason); // whole party/raid, same match
         bool Dequeue(ObjectGuid guid);
         bool IsQueued(ObjectGuid guid) const { return _queue.Contains(guid); }
+        bool IsInQueue(ObjectGuid guid) const { return IsQueued(guid) || IsInvited(guid); } // includes the "Enter Battle" confirm
         std::array<std::size_t, PVP_TEAMS_COUNT> GetQueueSizes() const { return _queue.GetSizes(); }
         void ForceStart() { _forceStart = true; }
         void EndAll() { _endAllRequested = true; }

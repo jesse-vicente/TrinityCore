@@ -48,7 +48,7 @@ struct npc_heart_of_acherus_battlemaster : public ScriptedAI
         ClearGossipMenuFor(player);
 
         std::array<std::size_t, PVP_TEAMS_COUNT> const queued = sHeartOfAcherusMgr->GetQueueSizes();
-        if (sHeartOfAcherusMgr->IsQueued(player->GetGUID()))
+        if (sHeartOfAcherusMgr->IsInQueue(player->GetGUID()))
             AddGossipItemFor(player, GOSSIP_ICON_CHAT, "I want to leave the queue.", GOSSIP_SENDER_MAIN, ACTION_LEAVE_QUEUE);
         else if (!sHeartOfAcherusMgr->IsInMatch(player->GetGUID()))
             AddGossipItemFor(player, GOSSIP_ICON_CHAT, Trinity::StringFormat("I want to join the battle for the Heart of Acherus. (Alliance {}, Horde {} queued)",

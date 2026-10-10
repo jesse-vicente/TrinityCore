@@ -96,7 +96,7 @@ namespace HeartOfAcherus
 
     Manager::Manager()
     {
-        _clientUI.SetParticipantCheck([this](ObjectGuid guid) { return IsQueued(guid) || IsInMatch(guid) || IsInvited(guid); });
+        _clientUI.SetParticipantCheck([this](ObjectGuid guid) { return IsInQueue(guid) || IsInMatch(guid); });
         // "mount" (mount button) summons the Acherus Deathcharger, "mount <spell id>" (client hook) the player's own mount
         _clientUI.RegisterCommand("mount", [this](Player* player, std::string const& args)
         {
@@ -402,7 +402,7 @@ namespace HeartOfAcherus
             return false;
         }
 
-        if (IsQueued(player->GetGUID()))
+        if (IsInQueue(player->GetGUID()))
         {
             error = "You are already queued for the battle for the Heart of Acherus.";
             reason = ERR_BATTLEGROUND_TOO_MANY_QUEUES;
@@ -868,7 +868,7 @@ namespace HeartOfAcherus
     // (the OnJoinBattlegroundQueue hook sends the client error, a GroupJoinBattlegroundResult)
     bool Manager::CanJoinRealBattlegroundQueue(Player* player)
     {
-        return !IsQueued(player->GetGUID()) && !IsInMatch(player->GetGUID());
+        return !IsInQueue(player->GetGUID()) && !IsInMatch(player->GetGUID());
     }
 
     // before the player is saved, so the rune auras are never stored

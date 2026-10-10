@@ -75,8 +75,8 @@ public:
             return true;
         }
 
-        // a repeated Join click is a no-op
-        if (sHeartOfAcherusMgr->IsQueued(player->GetGUID()))
+        // a repeated Join click is a no-op (also while the "Enter Battle" confirm is open)
+        if (sHeartOfAcherusMgr->IsInQueue(player->GetGUID()))
             return true;
 
         if (!sHeartOfAcherusMgr->Enqueue(player, error, reason))
