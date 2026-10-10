@@ -54,7 +54,7 @@ namespace HeartOfAcherus
             for (uint32 spellId : runeTemplate.CarrierAuras)
                 if (IsCarrierStackAura(spellId))
                     if (Aura* aura = player->GetAura(spellId))
-                        aura->SetCharges(uint8(std::min<uint32>(stacks, 255)));
+                        aura->SetCharges(uint8(std::min<uint32>(stacks, RunePower::MaxStacks)));
         }
 
         // the forge use range reaches the upper floor through the ceiling
@@ -107,7 +107,7 @@ namespace HeartOfAcherus
         for (uint32 spellId : runeTemplate.CarrierAuras)
             if (Aura* aura = ApplyPermanentAura(player, spellId))
                 if (IsCarrierStackAura(spellId))
-                    aura->SetCharges(uint8(std::min<uint32>(state.Stacks, 255)));
+                    aura->SetCharges(uint8(std::min<uint32>(state.Stacks, RunePower::MaxStacks)));
 
         _match.GetHall().SetForgeVisuals(rune, false);
         _match.UpdateWorldStates();
@@ -180,6 +180,10 @@ namespace HeartOfAcherus
                 continue;
 
             state.StackTimer -= Timers::RuneStack;
+
+            if (state.Stacks >= RunePower::MaxStacks)
+                continue;
+
             ++state.Stacks;
 
             if (player)
