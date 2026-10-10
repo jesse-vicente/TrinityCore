@@ -24,6 +24,7 @@
 #include <functional>
 #include <mutex>
 #include <string>
+#include <string_view>
 #include <unordered_map>
 #include <unordered_set>
 #include <vector>
@@ -75,6 +76,7 @@ namespace HeartOfAcherus
         static void Send(Player* player, std::string const& lua);
         void SetRelabel(Player* player, bool active) const;
         void ShowError(Player* player, std::string const& text) const;
+        void ShowClientError(Player* player, std::string_view globalString) const; // name of a client GlobalStrings error
 
     private:
         void RequestPart(Player* player, PayloadPart part);

@@ -28,6 +28,7 @@
 #include "MapManager.h"
 #include "ObjectAccessor.h"
 #include "Player.h"
+#include "SmartEnum.h"
 #include "SpellAuraEffects.h"
 #include "SpellInfo.h"
 #include "SpellMgr.h"
@@ -588,7 +589,7 @@ namespace HeartOfAcherus
     // the client refuses mount spells indoors by itself, so the client UI asks the server, which casts the mount with
     // its cast time: the player's own one (a known spell with a mount aura), or the Acherus Deathcharger for the mount
     // button and for the flying-only mounts, which have no ground speed. The client ignores the results of a cast it did
-    // not start, so the usual refusals are checked here, with the client's own wording. Dismounting is its own request,
+    // not start, so the usual refusals are checked here and shown with the client's own errors. Dismounting is its own request,
     // so a repeated click never mounts again right after
     void Manager::OnMountRequest(Player* player, uint32 spellId)
     {
@@ -607,19 +608,19 @@ namespace HeartOfAcherus
 
         Match const* match = GetMatch(player->GetGUID());
         if (!match || !IsOutdoorsForced(player))
-            _clientUI.ShowError(player, "You can only mount here during the battle.");
+            _clientUI.ShowClientError(player, "SPELL_FAILED_NO_MOUNTS_ALLOWED");
         else if (!player->IsAlive())
-            _clientUI.ShowError(player, "You are dead.");
+            _clientUI.ShowClientError(player, "SPELL_FAILED_CASTER_DEAD");
         else if (match->GetRunes().GetCarried(player->GetGUID()))
-            _clientUI.ShowError(player, "You can't mount while carrying a rune.");
+            _clientUI.ShowClientError(player, "SPELL_FAILED_CANT_DO_THAT_RIGHT_NOW");
         else if (player->IsInCombat())
-            _clientUI.ShowError(player, "You are in combat.");
+            _clientUI.ShowClientError(player, "SPELL_FAILED_AFFECTING_COMBAT");
         else if (player->isMoving())
-            _clientUI.ShowError(player, "Can't do that while moving.");
+            _clientUI.ShowClientError(player, "SPELL_FAILED_MOVING");
         else if (player->IsInDisallowedMountForm())
-            _clientUI.ShowError(player, "You can't mount while shapeshifted.");
+            _clientUI.ShowClientError(player, "ERR_MOUNT_SHAPESHIFTED");
         else if (player->IsNonMeleeSpellCast(false))
-            _clientUI.ShowError(player, "Another action is in progress.");
+            _clientUI.ShowClientError(player, "SPELL_FAILED_SPELL_IN_PROGRESS");
         else
             CastForClientUI(player, spellId);
     }
@@ -640,7 +641,7 @@ namespace HeartOfAcherus
 
         if (!IsOutdoorsForced(player))
         {
-            _clientUI.ShowError(player, "You can only use that here during the battle.");
+            _clientUI.ShowClientError(player, "SPELL_FAILED_ONLY_OUTDOORS");
             return;
         }
 
@@ -653,34 +654,23 @@ namespace HeartOfAcherus
     }
 
     // a cast the server starts for the client UI: the client ignores its result and does not start its own global
-    // cooldown, so both are done here, with the client's wording
+    // cooldown, so both are done here
     void Manager::CastForClientUI(Player* player, uint32 spellId)
     {
-        switch (player->CastSpell(player, spellId, false))
+        switch (SpellCastResult const result = player->CastSpell(player, spellId, false))
         {
             case SPELL_CAST_OK:
                 StartClientGlobalCooldown(player, spellId);
                 break;
-            case SPELL_FAILED_CASTER_DEAD:
-                _clientUI.ShowError(player, "You are dead.");
-                break;
-            case SPELL_FAILED_MOVING:
-                _clientUI.ShowError(player, "Can't do that while moving.");
-                break;
-            case SPELL_FAILED_NOT_READY:
-                _clientUI.ShowError(player, "Spell is not ready yet.");
+            case SPELL_FAILED_DONT_REPORT:
                 break;
             case SPELL_FAILED_NO_POWER:
-                _clientUI.ShowError(player, "Not enough mana.");
-                break;
-            case SPELL_FAILED_SPELL_IN_PROGRESS:
-                _clientUI.ShowError(player, "Another action is in progress.");
-                break;
-            case SPELL_FAILED_AFFECTING_COMBAT:
-                _clientUI.ShowError(player, "You are in combat.");
+                // the client words it by power type; these spells cost mana
+                _clientUI.ShowClientError(player, "ERR_OUT_OF_MANA");
                 break;
             default:
-                _clientUI.ShowError(player, "You can't do that right now.");
+                // the GlobalStrings name of a cast result is its constant name
+                _clientUI.ShowClientError(player, EnumUtils::ToConstant(result));
                 break;
         }
     }

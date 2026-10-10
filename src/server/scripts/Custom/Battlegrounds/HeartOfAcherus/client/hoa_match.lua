@@ -661,14 +661,13 @@ local function SendRequest(body)
     SendAddonMessage('AcherusBG', body, 'WHISPER', UnitName('player'))
 end
 
--- the mount refusals ("You can't mount here", and "You are in combat" for a click while mounted) only pair with a
--- mount request, which was sent with the click: pairing just swallows them
+-- "You are in combat" for a click while mounted only pairs with a mount request, which was sent with the click:
+-- pairing just swallows it
 local function TryPair()
     if not (attempt and refusal and math.abs(attemptTime - refusalTime) <= HOOK_WINDOW) then
         return
     end
-    local mountRefusal = refusal == SPELL_FAILED_NO_MOUNTS_ALLOWED or refusal == SPELL_FAILED_AFFECTING_COMBAT
-    if mountRefusal and not IsMountRequest(attempt) then
+    if refusal == SPELL_FAILED_AFFECTING_COMBAT and not IsMountRequest(attempt) then
         return
     end
     local body = attempt
@@ -689,9 +688,28 @@ local function OnAttempt(body)
     end
 end
 
+-- UI addons with their own error filter (KkthnxUI) show UI_ERROR_MESSAGE through their own frame, past the OnEvent
+-- below, so in a match the hook's refusals are also dropped where every path ends: UIErrorsFrame:AddMessage. The
+-- late display of an unpaired refusal goes through
+local HIDDEN_REFUSALS = {}
+for _, message in ipairs({ SPELL_FAILED_NO_MOUNTS_ALLOWED, SPELL_FAILED_ONLY_OUTDOORS }) do
+    HIDDEN_REFUSALS[message] = true
+end
+
+local showingRefusal = false
+local BaseAddMessage = UIErrorsFrame.AddMessage
+UIErrorsFrame.AddMessage = function(self, message, ...)
+    if not showingRefusal and message and HIDDEN_REFUSALS[message] and HookActive() then
+        return
+    end
+    return BaseAddMessage(self, message, ...)
+end
+
 refusalTimer:SetScript("OnUpdate", function(self)
     if refusal and GetTime() - refusalTime > HOOK_WINDOW then
+        showingRefusal = true
         UIErrorsFrame:AddMessage(refusal, 1.0, 0.1, 0.1, 1.0)
+        showingRefusal = false
         refusal = nil
     end
     if not refusal then
@@ -744,10 +762,13 @@ end)
 local ErrorsOnEvent = UIErrorsFrame:GetScript("OnEvent")
 UIErrorsFrame:SetScript("OnEvent", function(self, event, message, ...)
     if event == "UI_ERROR_MESSAGE" and HookActive() then
-        local hookMounts = AcherusBG_OutdoorSpellsMethod == OUTDOOR_METHOD_CLIENT_HOOK
+        -- the hall counts as outdoors for the server: never shown in a match, a mount goes through the hook or the button
+        if message == SPELL_FAILED_NO_MOUNTS_ALLOWED then
+            return
+        end
         if message == SPELL_FAILED_ONLY_OUTDOORS
-            or (message == SPELL_FAILED_NO_MOUNTS_ALLOWED and hookMounts)
-            or (message == SPELL_FAILED_AFFECTING_COMBAT and hookMounts and IsMounted()) then
+            or (message == SPELL_FAILED_AFFECTING_COMBAT and IsMounted()
+                and AcherusBG_OutdoorSpellsMethod == OUTDOOR_METHOD_CLIENT_HOOK) then
             refusal, refusalTime = message, GetTime()
             refusalTimer:Show()
             TryPair()
@@ -760,6 +781,15 @@ end)
 -- The client also draws these spells unusable in the hall (grey icon). In a match the hook makes them usable, so the
 -- Blizzard action and shapeshift buttons get the usable color back after their own update, unless mana is short.
 
+local function IsCarryingRune()
+    for spellName in pairs(RUNE_AURAS) do
+        if UnitBuff("player", spellName) then
+            return true
+        end
+    end
+    return false
+end
+
 local ACTION_BUTTON_PREFIXES = { "ActionButton", "MultiBarBottomLeftButton", "MultiBarBottomRightButton",
     "MultiBarRightButton", "MultiBarLeftButton", "BonusActionButton" }
 
@@ -769,8 +799,9 @@ if ActionButton_UpdateUsable then
         if not request then
             return
         end
-        -- mounts stay grey in combat, like anywhere else, even mounted (the click still dismounts)
-        if IsMountRequest(request) and UnitAffectingCombat("player") then
+        -- mounts stay grey in combat, like anywhere else, even mounted (the click still dismounts), and while carrying a
+        -- rune (the click shows why)
+        if IsMountRequest(request) and (UnitAffectingCombat("player") or IsCarryingRune()) then
             return
         end
         local isUsable, notEnoughMana = IsUsableAction(self.action)

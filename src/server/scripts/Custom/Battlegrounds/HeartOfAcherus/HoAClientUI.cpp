@@ -409,6 +409,14 @@ namespace HeartOfAcherus
             player->GetSession()->SendNotification("%s", text.c_str());
     }
 
+    // one of the client's own errors by its GlobalStrings name (SPELL_FAILED_MOVING), so every client shows it in its
+    // language; without the UI nothing can reach the client
+    void ClientUI::ShowClientError(Player* player, std::string_view globalString) const
+    {
+        if (IsEnabled())
+            Send(player, Trinity::StringFormat("UIErrorsFrame:AddMessage({} or SPELL_FAILED_UNKNOWN,1,0.1,0.1,1)", globalString));
+    }
+
     // ----------------------------------------------------------------- delivery
 
     // pushes a part, or queues it during the cooldown; without a listener the bootstrap is redone instead
