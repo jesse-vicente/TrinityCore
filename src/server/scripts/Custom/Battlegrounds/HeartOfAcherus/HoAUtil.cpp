@@ -23,7 +23,9 @@
 #include "ObjectDefines.h"
 #include "Player.h"
 #include "SpellAuras.h"
+#include "SpellHistory.h"
 #include "TemporarySummon.h"
+#include "WorldPacket.h"
 
 namespace HeartOfAcherus
 {
@@ -118,6 +120,15 @@ namespace HeartOfAcherus
     {
         player->RemoveAurasByType(SPELL_AURA_MOUNTED);
         player->Dismount();
+    }
+
+    // the client starts its global cooldown only for the casts it sends itself; as Player::EquipItem does for the weapon
+    // switch, the packet starts it for the spell the server cast
+    void StartClientGlobalCooldown(Player* player, uint32 spellId)
+    {
+        WorldPacket data;
+        player->GetSpellHistory()->BuildCooldownPacket(data, SPELL_COOLDOWN_FLAG_INCLUDE_GCD, spellId, 0);
+        player->SendDirectMessage(&data);
     }
 
     void Revive(Player* player)

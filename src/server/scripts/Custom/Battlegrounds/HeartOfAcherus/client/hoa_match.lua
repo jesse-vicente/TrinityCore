@@ -378,13 +378,28 @@ function AcherusBG_Runes.Update(px, py, fx, fy, fName, bx, by, bName, ux, uy, uN
     }
 end
 
--- ---------------------------------------------------------------------------- mount methods
--- The client refuses mount spells indoors by itself, nothing reaches the server. The server puts the active
--- HeartOfAcherus.MountMethod in AcherusBG_MountMethod at the top of this payload; each method checks its id.
+-- ---------------------------------------------------------------------------- outdoor spells methods
+-- The client refuses outdoor-only spells (mounts, Travel Form, Ghost Wolf) indoors by itself, nothing reaches the
+-- server. The server puts the active HeartOfAcherus.OutdoorSpellsMethod in AcherusBG_OutdoorSpellsMethod at the top
+-- of this payload; each method checks its id.
 
-local MOUNT_METHOD_FRAME = 1
+local OUTDOOR_METHOD_MOUNT_BUTTON = 1
+local OUTDOOR_METHOD_CLIENT_HOOK = 2
 
--- ---------------------------------------------------------------------------- mount method 1: frame
+-- the server fakes an Acherus match as an active battlefield
+local function IsInAcherusMatch()
+    if not AcherusBG_UI.active or IsRealEyeOfTheStorm() then
+        return false
+    end
+    for i = 1, (MAX_BATTLEFIELD_QUEUES or 2) do
+        if GetBattlefieldStatus(i) == "active" then
+            return true
+        end
+    end
+    return false
+end
+
+-- ---------------------------------------------------------------------------- method 1: mount button
 -- In a match this button asks the server to cast the Acherus Deathcharger (or to dismount). Bindable with
 -- /click AcherusBGMountButton. Draggable; the position goes to a client CVar (no SavedVariables here, and the
 -- layout cache skips frames created after the login).
@@ -449,7 +464,7 @@ mountLabel:SetText(GetSpellInfo(MOUNT_SPELL) or "Acherus Deathcharger")
 
 mountButton:SetScript("OnClick", function()
     -- a whisper to self reaches the server for every player (the GUILD channel does not send without a guild)
-    SendAddonMessage('AcherusBG', 'mount', 'WHISPER', UnitName('player'))
+    SendAddonMessage('AcherusBG', IsMounted() and 'dismount' or 'mount', 'WHISPER', UnitName('player'))
 end)
 
 mountButton:SetScript("OnEnter", function(self)
@@ -494,19 +509,9 @@ local function UpdateMountUsable()
     end
 end
 
--- shown while the player is in an Acherus match: the server fakes it as an active battlefield
+-- shown while the player is in an Acherus match
 local function UpdateMountButton()
-    local inMatch = false
-    if AcherusBG_MountMethod == MOUNT_METHOD_FRAME and AcherusBG_UI.active and not IsRealEyeOfTheStorm() then
-        for i = 1, (MAX_BATTLEFIELD_QUEUES or 2) do
-            if GetBattlefieldStatus(i) == "active" then
-                inMatch = true
-                break
-            end
-        end
-    end
-
-    if inMatch then
+    if AcherusBG_OutdoorSpellsMethod == OUTDOOR_METHOD_MOUNT_BUTTON and IsInAcherusMatch() then
         UpdateMountUsable()
         mountButton:Show()
     else
@@ -548,6 +553,323 @@ end
 
 -- this part may arrive with the match already running, after the events above
 UpdateMountButton()
+
+-- ---------------------------------------------------------------------------- client hook (methods 1 and 2)
+-- The casting functions are post-hooked (hooksecurefunc, so the action bars stay untainted) to remember the spell
+-- the player just tried. Forms (methods 1 and 2): when the client's own outdoors refusal comes with it, the error is
+-- swallowed and the server is asked to cast the form; a cast the client lets through is never asked for, so it is
+-- never doubled. Mounts (method 2): the click itself asks the server, because for a while after a dismount the client
+-- ignores a mount click without any error; "mount <spell id>" or "dismount", so a repeated click never toggles twice.
+-- The error may come before or after the hook, so both wait HOOK_WINDOW for each other; an unpaired error is shown late.
+
+local HOOK_WINDOW = 0.3
+local FORM_SPELLS = { 783, 2645 } -- Travel Form, Ghost Wolf
+
+local formSpells = {}
+for _, spellId in ipairs(FORM_SPELLS) do
+    local spellName = GetSpellInfo(spellId)
+    if spellName then
+        formSpells[spellName] = spellId
+    end
+end
+
+local function HookActive()
+    return (AcherusBG_OutdoorSpellsMethod == OUTDOOR_METHOD_MOUNT_BUTTON
+        or AcherusBG_OutdoorSpellsMethod == OUTDOOR_METHOD_CLIENT_HOOK) and IsInAcherusMatch()
+end
+
+-- IsMounted() as of the last frame: a click on the active mount dismounts on the client before the hooks run, which
+-- must not read it as a click to mount
+local mountedLastFrame = false
+local mountedWatcher = CreateFrame("Frame")
+mountedWatcher:SetScript("OnUpdate", function()
+    mountedLastFrame = IsMounted()
+end)
+
+-- mounted, any mount click dismounts (the server ignores it if the client already did); in combat the client's own
+-- refusal stays
+local function MountRequest(spellId)
+    if AcherusBG_OutdoorSpellsMethod ~= OUTDOOR_METHOD_CLIENT_HOOK or not spellId then
+        return nil
+    end
+    if IsMounted() or mountedLastFrame then
+        return "dismount"
+    end
+    if UnitAffectingCombat("player") then
+        return nil
+    end
+    return "mount " .. spellId
+end
+
+local function IsMountRequest(body)
+    return body == "dismount" or string.find(body, "^mount ") ~= nil
+end
+
+local function MountSpellByName(spellName)
+    for i = 1, GetNumCompanions("MOUNT") do
+        local _, _, spellId = GetCompanionInfo("MOUNT", i)
+        if spellId and GetSpellInfo(spellId) == spellName then
+            return spellId
+        end
+    end
+end
+
+-- an action bar companion: its id is the spell or the creature, or else the index in the mount list
+local function MountSpellByAction(id)
+    local count = GetNumCompanions("MOUNT")
+    for i = 1, count do
+        local creatureId, _, spellId = GetCompanionInfo("MOUNT", i)
+        if id == spellId or id == creatureId then
+            return spellId
+        end
+    end
+    if id and id >= 1 and id <= count then
+        return (select(3, GetCompanionInfo("MOUNT", id)))
+    end
+end
+
+-- "!Travel Form" and "Travel Form(Rank 1)" as given to /cast. "!" keeps an active form instead of leaving it: the
+-- form is cast again, which druids use to drop slows, so the server gets "form! <id>" instead of "form <id>"
+local function SpellRequest(spellName)
+    if type(spellName) ~= "string" then
+        return nil
+    end
+    local keep = string.find(spellName, "^%s*!") ~= nil
+    spellName = string.gsub(spellName, "^%s*!", "")
+    spellName = string.gsub(spellName, "%s*%(.-%)%s*$", "")
+    if formSpells[spellName] then
+        return (keep and "form! " or "form ") .. formSpells[spellName]
+    end
+    return MountRequest(MountSpellByName(spellName))
+end
+
+local attempt, attemptTime -- request for the spell the player just tried
+local refusal, refusalTime -- the refusal text, shown late if nothing pairs with it
+local refusalTimer = CreateFrame("Frame")
+refusalTimer:Hide()
+
+local lastMountRequest = 0
+
+local function SendRequest(body)
+    -- one click may reach more than one hook
+    if IsMountRequest(body) then
+        if GetTime() - lastMountRequest < HOOK_WINDOW then
+            return
+        end
+        lastMountRequest = GetTime()
+    end
+    SendAddonMessage('AcherusBG', body, 'WHISPER', UnitName('player'))
+end
+
+-- "You are in combat" for a click while mounted only pairs with a mount request, which was sent with the click:
+-- pairing just swallows it
+local function TryPair()
+    if not (attempt and refusal and math.abs(attemptTime - refusalTime) <= HOOK_WINDOW) then
+        return
+    end
+    if refusal == SPELL_FAILED_AFFECTING_COMBAT and not IsMountRequest(attempt) then
+        return
+    end
+    local body = attempt
+    attempt, refusal = nil, nil
+    refusalTimer:Hide()
+    if not IsMountRequest(body) then
+        SendRequest(body)
+    end
+end
+
+local function OnAttempt(body)
+    if body and HookActive() then
+        attempt, attemptTime = body, GetTime()
+        if IsMountRequest(body) then
+            SendRequest(body)
+        end
+        TryPair()
+    end
+end
+
+-- UI addons with their own error filter (KkthnxUI) show UI_ERROR_MESSAGE through their own frame, past the OnEvent
+-- below, so in a match the hook's refusals are also dropped where every path ends: UIErrorsFrame:AddMessage. The
+-- late display of an unpaired refusal goes through
+local HIDDEN_REFUSALS = {}
+for _, message in ipairs({ SPELL_FAILED_NO_MOUNTS_ALLOWED, SPELL_FAILED_ONLY_OUTDOORS }) do
+    HIDDEN_REFUSALS[message] = true
+end
+
+local showingRefusal = false
+local BaseAddMessage = UIErrorsFrame.AddMessage
+UIErrorsFrame.AddMessage = function(self, message, ...)
+    if not showingRefusal and message and HIDDEN_REFUSALS[message] and HookActive() then
+        return
+    end
+    return BaseAddMessage(self, message, ...)
+end
+
+refusalTimer:SetScript("OnUpdate", function(self)
+    if refusal and GetTime() - refusalTime > HOOK_WINDOW then
+        showingRefusal = true
+        UIErrorsFrame:AddMessage(refusal, 1.0, 0.1, 0.1, 1.0)
+        showingRefusal = false
+        refusal = nil
+    end
+    if not refusal then
+        self:Hide()
+    end
+end)
+
+local function ActionRequest(slot)
+    local actionType, id, subType, spellId = GetActionInfo(slot)
+    if actionType == "spell" then
+        if spellId then
+            return SpellRequest(GetSpellInfo(spellId))
+        elseif subType ~= "pet" then
+            return SpellRequest(GetSpellName(id, "spell"))
+        end
+    elseif actionType == "companion" and subType == "MOUNT" then
+        return MountRequest(MountSpellByAction(id))
+    elseif actionType == "macro" then
+        return SpellRequest(GetMacroSpell(id))
+    end
+end
+
+-- a macro casts through CastSpellByName, hooked below with its "!"; this hook runs after it and would replace it
+hooksecurefunc("UseAction", function(slot)
+    if GetActionInfo(slot) ~= "macro" then
+        OnAttempt(ActionRequest(slot))
+    end
+end)
+
+hooksecurefunc("CastSpellByName", function(spellName)
+    OnAttempt(SpellRequest(spellName))
+end)
+
+hooksecurefunc("CastSpell", function(index, book)
+    if book ~= "pet" then
+        OnAttempt(SpellRequest(GetSpellName(index, book)))
+    end
+end)
+
+hooksecurefunc("CastShapeshiftForm", function(index)
+    OnAttempt(SpellRequest(select(2, GetShapeshiftFormInfo(index))))
+end)
+
+hooksecurefunc("CallCompanion", function(companionType, index)
+    if companionType == "MOUNT" then
+        OnAttempt(MountRequest((select(3, GetCompanionInfo("MOUNT", index)))))
+    end
+end)
+
+local ErrorsOnEvent = UIErrorsFrame:GetScript("OnEvent")
+UIErrorsFrame:SetScript("OnEvent", function(self, event, message, ...)
+    if event == "UI_ERROR_MESSAGE" and HookActive() then
+        -- the hall counts as outdoors for the server: never shown in a match, a mount goes through the hook or the button
+        if message == SPELL_FAILED_NO_MOUNTS_ALLOWED then
+            return
+        end
+        if message == SPELL_FAILED_ONLY_OUTDOORS
+            or (message == SPELL_FAILED_AFFECTING_COMBAT and IsMounted()
+                and AcherusBG_OutdoorSpellsMethod == OUTDOOR_METHOD_CLIENT_HOOK) then
+            refusal, refusalTime = message, GetTime()
+            refusalTimer:Show()
+            TryPair()
+            return
+        end
+    end
+    return ErrorsOnEvent(self, event, message, ...)
+end)
+
+-- The client also draws these spells unusable in the hall (grey icon). In a match the hook makes them usable, so the
+-- Blizzard action and shapeshift buttons get the usable color back after their own update, unless mana is short.
+
+local function IsCarryingRune()
+    for spellName in pairs(RUNE_AURAS) do
+        if UnitBuff("player", spellName) then
+            return true
+        end
+    end
+    return false
+end
+
+local ACTION_BUTTON_PREFIXES = { "ActionButton", "MultiBarBottomLeftButton", "MultiBarBottomRightButton",
+    "MultiBarRightButton", "MultiBarLeftButton", "BonusActionButton" }
+
+if ActionButton_UpdateUsable then
+    hooksecurefunc("ActionButton_UpdateUsable", function(self)
+        local request = self.action and HookActive() and ActionRequest(self.action)
+        if not request then
+            return
+        end
+        -- mounts stay grey in combat, like anywhere else, even mounted (the click still dismounts), and while carrying a
+        -- rune (the click shows why)
+        if IsMountRequest(request) and (UnitAffectingCombat("player") or IsCarryingRune()) then
+            return
+        end
+        local isUsable, notEnoughMana = IsUsableAction(self.action)
+        local icon = _G[self:GetName() .. "Icon"]
+        if icon and not isUsable and not notEnoughMana then
+            icon:SetVertexColor(1.0, 1.0, 1.0)
+        end
+    end)
+end
+
+if ShapeshiftBar_UpdateState then
+    hooksecurefunc("ShapeshiftBar_UpdateState", function()
+        if not HookActive() then
+            return
+        end
+        for i = 1, GetNumShapeshiftForms() do
+            local _, spellName, _, isCastable = GetShapeshiftFormInfo(i)
+            local icon = _G["ShapeshiftButton" .. i .. "Icon"]
+            if icon and not isCastable and SpellRequest(spellName) and not select(2, IsUsableSpell(spellName)) then
+                icon:SetVertexColor(1.0, 1.0, 1.0)
+            end
+        end
+    end)
+end
+
+-- the buttons update on their own events, not when a match starts or ends, nor on combat or mount changes
+local function RefreshUsableLook()
+    if ActionButton_UpdateUsable then
+        for _, prefix in ipairs(ACTION_BUTTON_PREFIXES) do
+            for i = 1, (NUM_ACTIONBAR_BUTTONS or 12) do
+                local button = _G[prefix .. i]
+                if button and button.action then
+                    ActionButton_UpdateUsable(button)
+                end
+            end
+        end
+    end
+    if ShapeshiftBar_UpdateState then
+        ShapeshiftBar_UpdateState()
+    end
+end
+
+local usableLookWatcher = CreateFrame("Frame")
+usableLookWatcher:RegisterEvent("UPDATE_BATTLEFIELD_STATUS")
+usableLookWatcher:RegisterEvent("PLAYER_ENTERING_WORLD")
+usableLookWatcher:RegisterEvent("PLAYER_REGEN_DISABLED")
+usableLookWatcher:RegisterEvent("PLAYER_REGEN_ENABLED")
+usableLookWatcher:RegisterEvent("COMPANION_UPDATE")
+usableLookWatcher:RegisterEvent("UNIT_AURA")
+usableLookWatcher:SetScript("OnEvent", function(self, event, unit)
+    if event == "UNIT_AURA" and unit ~= "player" then
+        return
+    end
+    if HookActive() or event == "UPDATE_BATTLEFIELD_STATUS" or event == "PLAYER_ENTERING_WORLD" then
+        RefreshUsableLook()
+    end
+end)
+
+local RelabelBeforeUsableLook = AcherusBG_UI.Relabel
+if RelabelBeforeUsableLook then
+    AcherusBG_UI.Relabel = function()
+        local result = RelabelBeforeUsableLook()
+        RefreshUsableLook()
+        return result
+    end
+end
+
+RefreshUsableLook()
 
 -- ---------------------------------------------------------------------------- instruction book
 -- The starting area book is a page text (ItemTextFrame, SimpleHTML), which has no H1 font and draws no icons.

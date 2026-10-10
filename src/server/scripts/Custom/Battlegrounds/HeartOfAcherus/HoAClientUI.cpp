@@ -279,9 +279,10 @@ namespace HeartOfAcherus
             return;
 
         std::string const body = msg.substr(tab + 1);
-        if (auto command = _commands.find(body); command != _commands.end())
+        std::string::size_type const space = body.find(' ');
+        if (auto command = _commands.find(body.substr(0, space)); command != _commands.end())
         {
-            command->second(player);
+            command->second(player, space == std::string::npos ? std::string() : body.substr(space + 1));
             return;
         }
 
@@ -406,6 +407,14 @@ namespace HeartOfAcherus
             Send(player, Trinity::StringFormat("UIErrorsFrame:AddMessage('{}',1,0.1,0.1,1)", text));
         else
             player->GetSession()->SendNotification("%s", text.c_str());
+    }
+
+    // one of the client's own errors by its GlobalStrings name (SPELL_FAILED_MOVING), so every client shows it in its
+    // language; without the UI nothing can reach the client
+    void ClientUI::ShowClientError(Player* player, std::string_view globalString) const
+    {
+        if (IsEnabled())
+            Send(player, Trinity::StringFormat("UIErrorsFrame:AddMessage({} or SPELL_FAILED_UNKNOWN,1,0.1,0.1,1)", globalString));
     }
 
     // ----------------------------------------------------------------- delivery

@@ -76,7 +76,7 @@ namespace HeartOfAcherus
         else if (!player->IsAlive())
             return;
         else if (IsAboveForges(player))
-            clientUI.ShowError(player, "You are too far away.");
+            clientUI.ShowClientError(player, "ERR_USE_TOO_FAR");
         else if (!_runes[std::size_t(*rune)].Carrier.IsEmpty())
             clientUI.ShowError(player, "This rune is already taken.");
         else if (GetCarried(player->GetGUID()))

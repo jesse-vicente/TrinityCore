@@ -61,6 +61,8 @@ namespace HeartOfAcherus
         static constexpr uint32 PreparationDome = 50461;            // Anti-Magic Zone: only its channel kit is used
         static constexpr uint32 StairsPortal = 42049;               // Boss Frost Portal State (dummy)
         static constexpr uint32 AcherusDeathcharger = 48778;        // mount aura and +100% mounted speed
+        static constexpr uint32 TravelForm = 783;                   // outdoors only (SPELL_ATTR0_OUTDOORS_ONLY)
+        static constexpr uint32 GhostWolf = 2645;                   // outdoors only (SPELL_ATTR0_OUTDOORS_ONLY)
 
         // forge auras, visual only (see docs/visuals.md)
         static constexpr uint32 ForgeSpiritsFrost = 31954;          // Spirit Particles, super big (DND)
@@ -183,11 +185,12 @@ namespace HeartOfAcherus
         Left                                                        // left the map by himself
     };
 
-    // HeartOfAcherus.MountMethod; the id is also sent to the client UI, which runs the client side of the method
-    enum class MountMethod : uint8
+    // HeartOfAcherus.OutdoorSpellsMethod; the id is also sent to the client UI, which runs the client side of the method
+    enum class OutdoorSpellsMethod : uint8
     {
-        None  = 0,                                                  // the hall stays indoors
-        Frame = 1,                                                  // client mount button, the server casts the mount
+        None        = 0,                                            // the hall stays indoors
+        MountButton = 1,                                            // client mount button, forms through the client hook
+        ClientHook  = 2,                                            // mounts and forms through the client hook
         Max
     };
 }

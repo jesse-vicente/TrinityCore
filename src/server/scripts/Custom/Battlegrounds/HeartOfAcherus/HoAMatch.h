@@ -97,7 +97,7 @@ namespace HeartOfAcherus
         void Update(uint32 diff);
         void End(TeamId winner);                                    // TEAM_NEUTRAL = draw
 
-        bool AreHallRulesActive(Player const* player) const;        // no sanctuary, outdoors with a mount method
+        bool AreHallRulesActive(Player const* player) const;        // no sanctuary, outdoors with an outdoor spells method
         void ApplyPlayerState(Player* player) const;
         void OnKill(Player* killer, Player* killed);
         void AddDamageDone(ObjectGuid guid, uint32 damage);
